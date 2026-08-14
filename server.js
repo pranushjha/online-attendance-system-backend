@@ -2,6 +2,8 @@ const express = require("express");
 const cors = require("cors");
 const dotenv = require("dotenv");
 
+dotenv.config({ path: __dirname + "/.env" });
+
 const connectDB = require("./config/db");
 
 dotenv.config();
@@ -26,7 +28,7 @@ app.use(express.json());
 // ==========================================
 
 const authRoutes = require("./routes/authRoutes");
-const teacherRoutes = require("./routes/TeacherRoutes");
+const teacherRoutes = require("./routes/teacherRoutes");
 
 app.use("/api/auth", authRoutes);
 app.use("/api/teachers", teacherRoutes);
