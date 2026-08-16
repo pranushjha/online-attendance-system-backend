@@ -1,51 +1,131 @@
 const express = require("express");
 
+const router = express.Router();
+
+const attendanceController = require("../controllers/attendanceController");
+
 const authMiddleware = require("../middleware/authMiddleware");
 const roleMiddleware = require("../middleware/roleMiddleware");
 
-const router = express.Router();
-
 // ==========================================
-// TEACHER ONLY
+// ATTENDANCE ROUTES
 // ==========================================
 
-// Get attendance
+
+// ==========================================
+// GET ALL ATTENDANCE
+// GET /api/attendance
+// ADMIN + TEACHER
+// ==========================================
+
 router.get(
     "/",
     authMiddleware,
-    roleMiddleware("teacher"),
-    (req, res) => {
-        res.status(200).json({
-            success: true,
-            message: "Attendance route accessed successfully",
-        });
-    }
+    roleMiddleware("admin", "teacher"),
+    attendanceController.getAttendance
 );
 
-// Create attendance
+
+// ==========================================
+// GET CLASS ATTENDANCE REPORT
+// GET /api/attendance/report/class/:classId
+// ADMIN + TEACHER
+// ==========================================
+
+router.get(
+    "/report/class/:classId",
+    authMiddleware,
+    roleMiddleware("admin", "teacher"),
+    attendanceController.getClassAttendanceReport
+);
+
+
+// ==========================================
+// GET STUDENT ATTENDANCE REPORT
+// GET /api/attendance/report/student/:studentId
+// ADMIN + TEACHER
+// ==========================================
+
+router.get(
+    "/report/student/:studentId",
+    authMiddleware,
+    roleMiddleware("admin", "teacher"),
+    attendanceController.getStudentAttendanceReport
+);
+
+
+// ==========================================
+// GET DATE ATTENDANCE REPORT
+// GET /api/attendance/report/date/:date
+// ADMIN + TEACHER
+// ==========================================
+
+router.get(
+    "/report/date/:date",
+    authMiddleware,
+    roleMiddleware("admin", "teacher"),
+    attendanceController.getDateAttendanceReport
+);
+
+
+// ==========================================
+// GET ATTENDANCE BY ID
+// GET /api/attendance/:id
+// ADMIN + TEACHER
+// ==========================================
+
+router.get(
+    "/:id",
+    authMiddleware,
+    roleMiddleware("admin", "teacher"),
+    attendanceController.getAttendanceById
+);
+
+
+// ==========================================
+// CREATE ATTENDANCE
+// POST /api/attendance
+// TEACHER ONLY
+// ==========================================
+
 router.post(
     "/",
     authMiddleware,
     roleMiddleware("teacher"),
-    (req, res) => {
-        res.status(200).json({
-            success: true,
-            message: "Create attendance route accessed successfully",
-        });
-    }
+    attendanceController.markAttendance
 );
 
-// Update attendance
+
+// ==========================================
+// UPDATE ATTENDANCE
+// PUT /api/attendance/:id
+// TEACHER ONLY
+// ==========================================
+
 router.put(
     "/:id",
     authMiddleware,
     roleMiddleware("teacher"),
-    (req, res) => {
-        res.status(200).json({
-            success: true,
-            message: "Update attendance route accessed successfully",
-        });
-    }
+    attendanceController.updateAttendance
 );
+
+
+// ==========================================
+// DELETE ATTENDANCE
+// DELETE /api/attendance/:id
+// ADMIN ONLY
+// ==========================================
+
+router.delete(
+    "/:id",
+    authMiddleware,
+    roleMiddleware("admin"),
+    attendanceController.deleteAttendance
+);
+
+
+// ==========================================
+// EXPORT ROUTER
+// ==========================================
 
 module.exports = router;

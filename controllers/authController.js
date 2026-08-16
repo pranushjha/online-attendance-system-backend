@@ -2,7 +2,7 @@ const bcrypt = require("bcryptjs");
 const jwt = require("jsonwebtoken");
 
 const Admin = require("../models/Admin");
-const Teacher = require("../models/Teacher");
+const Teacher = require("../models/teacher");
 
 // ==========================================
 // GENERATE JWT TOKEN

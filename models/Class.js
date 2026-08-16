@@ -1,23 +1,31 @@
 const mongoose = require("mongoose");
 
 const classSchema = new mongoose.Schema(
-  {
-    className: {
-      type: String,
-      required: true,
-      unique: true,
-      trim: true,
-    },
+    {
+        // ==========================================
+        // CLASS NAME
+        // ==========================================
 
-    classTeacher: {
-      type: mongoose.Schema.Types.ObjectId,
-      ref: "Teacher",
-      default: null,
+        className: {
+            type: String,
+            required: true,
+            unique: true,
+            trim: true,
+        },
+
+        // ==========================================
+        // CLASS TEACHER
+        // ==========================================
+
+        classTeacher: {
+            type: mongoose.Schema.Types.ObjectId,
+            ref: "Teacher",
+            default: null,
+        },
     },
-  },
-  {
-    timestamps: true,
-  }
+    {
+        timestamps: true,
+    }
 );
 
 module.exports = mongoose.model("Class", classSchema);

@@ -1,34 +1,50 @@
 const mongoose = require("mongoose");
 
 const studentSchema = new mongoose.Schema(
-  {
-    rollNo: {
-      type: String,
-      required: true,
-      trim: true,
-      unique: true,
-    },
+    {
+        // ==========================================
+        // ROLL NUMBER
+        // ==========================================
 
-    name: {
-      type: String,
-      required: true,
-      trim: true,
-    },
+        rollNo: {
+            type: String,
+            required: true,
+            unique: true,
+            trim: true,
+        },
 
-    classId: {
-      type: mongoose.Schema.Types.ObjectId,
-      ref: "Class",
-      required: true,
-    },
+        // ==========================================
+        // STUDENT NAME
+        // ==========================================
 
-    active: {
-      type: Boolean,
-      default: true,
+        name: {
+            type: String,
+            required: true,
+            trim: true,
+        },
+
+        // ==========================================
+        // ASSIGNED CLASS
+        // ==========================================
+
+        classId: {
+            type: mongoose.Schema.Types.ObjectId,
+            ref: "Class",
+            required: true,
+        },
+
+        // ==========================================
+        // ACTIVE STATUS
+        // ==========================================
+
+        active: {
+            type: Boolean,
+            default: true,
+        },
     },
-  },
-  {
-    timestamps: true,
-  }
+    {
+        timestamps: true,
+    }
 );
 
 module.exports = mongoose.model("Student", studentSchema);

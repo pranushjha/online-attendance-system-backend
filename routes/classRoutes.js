@@ -1,25 +1,59 @@
 const express = require("express");
 
+const router = express.Router();
+
+const classController = require("../controllers/classController");
+
 const authMiddleware = require("../middleware/authMiddleware");
 const roleMiddleware = require("../middleware/roleMiddleware");
-
-const router = express.Router();
 
 // ==========================================
 // ADMIN ONLY
 // ==========================================
 
-// Get all classes
+// Create Class
+// POST /api/classes
+router.post(
+    "/",
+    authMiddleware,
+    roleMiddleware("admin"),
+    classController.createClass
+);
+
+// Get All Classes
+// GET /api/classes
 router.get(
     "/",
     authMiddleware,
     roleMiddleware("admin"),
-    (req, res) => {
-        res.status(200).json({
-            success: true,
-            message: "Classes route accessed successfully",
-        });
-    }
+    classController.getAllClasses
+);
+
+// Get Class By ID
+// GET /api/classes/:id
+router.get(
+    "/:id",
+    authMiddleware,
+    roleMiddleware("admin"),
+    classController.getClassById
+);
+
+// Update Class
+// PUT /api/classes/:id
+router.put(
+    "/:id",
+    authMiddleware,
+    roleMiddleware("admin"),
+    classController.updateClass
+);
+
+// Delete Class
+// DELETE /api/classes/:id
+router.delete(
+    "/:id",
+    authMiddleware,
+    roleMiddleware("admin"),
+    classController.deleteClass
 );
 
 module.exports = router;
