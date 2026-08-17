@@ -29,6 +29,23 @@ router.get(
     classController.getAllClasses
 );
 
+// ==========================================
+// TEACHER
+// ==========================================
+
+// Get My Assigned Class
+// GET /api/classes/my-class
+router.get(
+    "/my-class",
+    authMiddleware,
+    roleMiddleware("teacher"),
+    classController.getMyClass
+);
+
+// ==========================================
+// ADMIN ONLY
+// ==========================================
+
 // Get Class By ID
 // GET /api/classes/:id
 router.get(

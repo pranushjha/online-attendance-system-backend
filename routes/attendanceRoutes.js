@@ -85,13 +85,13 @@ router.get(
 // ==========================================
 // CREATE ATTENDANCE
 // POST /api/attendance
-// TEACHER ONLY
+// ADMIN + TEACHER
 // ==========================================
 
 router.post(
     "/",
     authMiddleware,
-    roleMiddleware("teacher"),
+    roleMiddleware("admin", "teacher"),
     attendanceController.markAttendance
 );
 
@@ -99,13 +99,13 @@ router.post(
 // ==========================================
 // UPDATE ATTENDANCE
 // PUT /api/attendance/:id
-// TEACHER ONLY
+// ADMIN + TEACHER
 // ==========================================
 
 router.put(
     "/:id",
     authMiddleware,
-    roleMiddleware("teacher"),
+    roleMiddleware("admin", "teacher"),
     attendanceController.updateAttendance
 );
 

@@ -2,6 +2,7 @@ const mongoose = require("mongoose");
 
 const Class = require("../models/Class");
 const Teacher = require("../models/teacher");
+const Student = require("../models/Student");    
 
 // ==========================================
 // CREATE CLASS
@@ -445,14 +446,88 @@ const deleteClass = async (req, res) => {
 };
 
 
+
+
+
+// ==========================================
+// GET MY CLASS
+// GET /api/classes/my-class
+// TEACHER ONLY
+// ==========================================
+
+const getMyClass = async (req, res) => {
+    try {
+        // ==========================================
+        // CHECK TEACHER AUTHENTICATION
+        // ==========================================
+
+        if (!req.user || req.user.role !== "teacher") {
+            return res.status(403).json({
+                success: false,
+                message: "Access denied. Teacher access required.",
+            });
+        }
+
+        const teacherId = req.user.id;
+
+        // ==========================================
+        // FIND CLASS ASSIGNED TO TEACHER
+        // ==========================================
+
+        const classData = await Class.findOne({
+            classTeacher: teacherId,
+        }).populate(
+            "classTeacher",
+            "name email assignedClass"
+        );
+
+        if (!classData) {
+            return res.status(404).json({
+                success: false,
+                message: "No class is assigned to you.",
+            });
+        }
+
+        // ==========================================
+        // GET ACTIVE STUDENTS
+        // ==========================================
+
+        const students = await Student.find({
+            classId: classData._id,
+            active: true,
+        })
+            .select("rollNo name email")
+            .sort({ rollNo: 1 });
+
+        // ==========================================
+        // RESPONSE
+        // ==========================================
+
+        return res.status(200).json({
+            success: true,
+            class: classData,
+            students,
+            studentCount: students.length,
+        });
+
+    } catch (error) {
+        console.error("Get My Class Error:", error);
+
+        return res.status(500).json({
+            success: false,
+            message: "Server error",
+        });
+    }
+};
+
 // ==========================================
 // EXPORT
 // ==========================================
-
 module.exports = {
     createClass,
     getAllClasses,
     getClassById,
     updateClass,
     deleteClass,
+    getMyClass,
 };

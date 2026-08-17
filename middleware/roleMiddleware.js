@@ -12,16 +12,54 @@ const roleMiddleware = (...allowedRoles) => {
             });
         }
 
+
+        // ==========================================
+        // CHECK ALLOWED ROLES
+        // ==========================================
+
+        if (!allowedRoles || allowedRoles.length === 0) {
+            console.error(
+                "Role Middleware Error: No allowed roles specified"
+            );
+
+            return res.status(500).json({
+                success: false,
+                message: "Server configuration error",
+            });
+        }
+
+
+        // ==========================================
+        // NORMALIZE USER ROLE
+        // ==========================================
+
+        const userRole = String(req.user.role || "")
+            .trim()
+            .toLowerCase();
+
+
+        // ==========================================
+        // NORMALIZE ALLOWED ROLES
+        // ==========================================
+
+        const normalizedAllowedRoles = allowedRoles.map((role) =>
+            String(role)
+                .trim()
+                .toLowerCase()
+        );
+
+
         // ==========================================
         // CHECK ROLE
         // ==========================================
 
-        if (!allowedRoles.includes(req.user.role)) {
+        if (!normalizedAllowedRoles.includes(userRole)) {
             return res.status(403).json({
                 success: false,
                 message: "Access denied. You do not have permission.",
             });
         }
+
 
         // ==========================================
         // ALLOW REQUEST
@@ -30,5 +68,6 @@ const roleMiddleware = (...allowedRoles) => {
         next();
     };
 };
+
 
 module.exports = roleMiddleware;

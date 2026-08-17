@@ -1,6 +1,101 @@
 const Student = require("../models/Student");
 const Class = require("../models/Class");
 const mongoose = require("mongoose");
+const XLSX = require("xlsx");
+
+
+// ==========================================
+// HELPER:
+// GET TEACHER'S ASSIGNED CLASS
+// ==========================================
+
+const getTeacherAssignedClass = async (req) => {
+
+    if (req.user?.role !== "teacher") {
+        return null;
+    }
+
+    if (!req.user?.id) {
+        return null;
+    }
+
+    const teacherClass = await Class.findOne({
+        classTeacher: req.user.id,
+    }).select("_id className classTeacher");
+
+    return teacherClass;
+};
+
+
+// ==========================================
+// HELPER:
+// CHECK CLASS ACCESS
+// ==========================================
+
+const teacherHasClassAccess = (
+    teacherClass,
+    classId
+) => {
+
+    if (!teacherClass || !classId) {
+        return false;
+    }
+
+    return (
+        String(teacherClass._id) ===
+        String(classId)
+    );
+};
+
+
+// ==========================================
+// HELPER:
+// NORMALIZE ACTIVE VALUE
+// ==========================================
+
+const normalizeActiveValue = (value) => {
+
+    if (typeof value === "boolean") {
+        return {
+            valid: true,
+            value,
+        };
+    }
+
+    if (typeof value === "string") {
+
+        const normalized =
+            value.trim().toLowerCase();
+
+        if (
+            normalized === "true" ||
+            normalized === "1" ||
+            normalized === "active"
+        ) {
+            return {
+                valid: true,
+                value: true,
+            };
+        }
+
+        if (
+            normalized === "false" ||
+            normalized === "0" ||
+            normalized === "inactive"
+        ) {
+            return {
+                valid: true,
+                value: false,
+            };
+        }
+    }
+
+    return {
+        valid: false,
+        value: null,
+    };
+};
+
 
 // ==========================================
 // CREATE STUDENT
@@ -8,124 +103,1003 @@ const mongoose = require("mongoose");
 // ==========================================
 
 const createStudent = async (req, res) => {
+
     try {
-        const { rollNo, name, classId } = req.body;
+
+        const {
+            rollNo,
+            name,
+            classId,
+        } = req.body;
+
 
         // ==========================================
-        // CHECK REQUIRED FIELDS
+        // REQUIRED FIELDS
         // ==========================================
 
-        if (!rollNo || !name || !classId) {
+        if (
+            rollNo === undefined ||
+            name === undefined ||
+            !classId
+        ) {
+
             return res.status(400).json({
                 success: false,
-                message: "Roll number, name and class are required",
+                message:
+                    "Roll number, name and class are required",
             });
         }
+
 
         // ==========================================
         // VALIDATE CLASS ID
         // ==========================================
 
-        if (!mongoose.Types.ObjectId.isValid(classId)) {
+        if (
+            !mongoose.Types.ObjectId.isValid(
+                classId
+            )
+        ) {
+
             return res.status(400).json({
                 success: false,
-                message: "Invalid class ID",
+                message:
+                    "Invalid class ID",
             });
         }
 
-        const normalizedRollNo = rollNo.trim();
-        const normalizedName = name.trim();
+
+        const normalizedRollNo =
+            String(rollNo).trim();
+
+        const normalizedName =
+            String(name).trim();
+
 
         if (!normalizedRollNo) {
+
             return res.status(400).json({
                 success: false,
-                message: "Roll number cannot be empty",
+                message:
+                    "Roll number cannot be empty",
             });
         }
+
 
         if (!normalizedName) {
+
             return res.status(400).json({
                 success: false,
-                message: "Student name cannot be empty",
+                message:
+                    "Student name cannot be empty",
             });
         }
 
-        // ==========================================
-        // CHECK DUPLICATE ROLL NUMBER
-        // ==========================================
-
-        const existingStudent = await Student.findOne({
-            rollNo: normalizedRollNo,
-        });
-
-        if (existingStudent) {
-            return res.status(400).json({
-                success: false,
-                message: "A student with this roll number already exists",
-            });
-        }
 
         // ==========================================
         // CHECK CLASS EXISTS
         // ==========================================
 
-        const classData = await Class.findById(classId);
+        const classData =
+            await Class.findById(classId);
 
         if (!classData) {
+
             return res.status(404).json({
                 success: false,
-                message: "Class not found",
+                message:
+                    "Class not found",
             });
         }
+
+
+        // ==========================================
+        // TEACHER CLASS ACCESS
+        // ==========================================
+
+        if (
+            req.user.role === "teacher"
+        ) {
+
+            const teacherClass =
+                await getTeacherAssignedClass(
+                    req
+                );
+
+
+            if (!teacherClass) {
+
+                return res.status(403).json({
+                    success: false,
+                    message:
+                        "You are not assigned to any class",
+                });
+            }
+
+
+            if (
+                !teacherHasClassAccess(
+                    teacherClass,
+                    classId
+                )
+            ) {
+
+                return res.status(403).json({
+                    success: false,
+                    message:
+                        "You can only manage students from your assigned class",
+                });
+            }
+        }
+
+
+        // ==========================================
+        // DUPLICATE ROLL NUMBER
+        // ==========================================
+
+        const existingStudent =
+            await Student.findOne({
+                rollNo: normalizedRollNo,
+            });
+
+
+        if (existingStudent) {
+
+            return res.status(400).json({
+                success: false,
+                message:
+                    "A student with this roll number already exists",
+            });
+        }
+
 
         // ==========================================
         // CREATE STUDENT
         // ==========================================
 
-        const student = await Student.create({
-            rollNo: normalizedRollNo,
-            name: normalizedName,
-            classId: classId,
-            active: true,
+        const student =
+            await Student.create({
+
+                rollNo:
+                    normalizedRollNo,
+
+                name:
+                    normalizedName,
+
+                classId,
+
+                active: true,
+            });
+
+
+        await student.populate(
+            "classId",
+            "className"
+        );
+
+
+        return res.status(201).json({
+
+            success: true,
+
+            message:
+                "Student created successfully",
+
+            student: {
+
+                _id:
+                    student._id,
+
+                rollNo:
+                    student.rollNo,
+
+                name:
+                    student.name,
+
+                classId:
+                    student.classId,
+
+                active:
+                    student.active === true,
+            },
         });
 
+    } catch (error) {
+
+        console.error(
+            "Create Student Error:",
+            error
+        );
+
+
+        if (
+            error.code === 11000
+        ) {
+
+            return res.status(400).json({
+                success: false,
+                message:
+                    "A student with this roll number already exists",
+            });
+        }
+
+
+        return res.status(500).json({
+            success: false,
+            message:
+                "Server error",
+        });
+    }
+};
+
+
+// ==========================================
+// BULK CREATE / UPDATE STUDENTS
+// POST /api/students/bulk
+// ==========================================
+
+const bulkUploadStudents = async (
+    req,
+    res
+) => {
+
+    try {
+
         // ==========================================
-        // POPULATE CLASS
+        // CHECK FILE
         // ==========================================
 
-        await student.populate("classId", "className");
+        if (!req.file) {
+
+            return res.status(400).json({
+                success: false,
+                message:
+                    "Excel file is required",
+            });
+        }
+
+
+        // ==========================================
+        // CHECK FILE TYPE
+        // ==========================================
+
+        const fileName =
+            req.file.originalname.toLowerCase();
+
+
+        if (
+            !fileName.endsWith(".xlsx") &&
+            !fileName.endsWith(".xls")
+        ) {
+
+            return res.status(400).json({
+                success: false,
+                message:
+                    "Only .xlsx and .xls Excel files are allowed",
+            });
+        }
+
+
+        // ==========================================
+        // READ EXCEL
+        // ==========================================
+
+        const workbook =
+            XLSX.read(
+                req.file.buffer,
+                {
+                    type: "buffer",
+                }
+            );
+
+
+        if (
+            !workbook.SheetNames.length
+        ) {
+
+            return res.status(400).json({
+                success: false,
+                message:
+                    "Excel file contains no sheets",
+            });
+        }
+
+
+        const worksheet =
+            workbook.Sheets[
+                workbook.SheetNames[0]
+            ];
+
+
+        const rows =
+            XLSX.utils.sheet_to_json(
+                worksheet,
+                {
+                    defval: "",
+                    raw: false,
+                }
+            );
+
+
+        if (!rows.length) {
+
+            return res.status(400).json({
+                success: false,
+                message:
+                    "Excel file contains no student data",
+            });
+        }
+
+
+        // ==========================================
+        // NORMALIZE HEADERS
+        // ==========================================
+
+        const normalizeHeader = (
+            header
+        ) => {
+
+            return String(header)
+                .trim()
+                .toLowerCase()
+                .replace(
+                    /[\s_-]+/g,
+                    ""
+                );
+        };
+
+
+        const normalizedRows =
+            rows.map(
+                (row, index) => {
+
+                    const rowData = {};
+
+
+                    Object.keys(row).forEach(
+                        (key) => {
+
+                            rowData[
+                                normalizeHeader(key)
+                            ] = row[key];
+
+                        }
+                    );
+
+
+                    return {
+
+                        rowNumber:
+                            index + 2,
+
+                        rollNo:
+                            rowData.roll ||
+                            rowData.rollno ||
+                            rowData.rollnumber ||
+                            "",
+
+                        name:
+                            rowData.name ||
+                            rowData.studentname ||
+                            "",
+
+                        className:
+                            rowData.class ||
+                            rowData.classname ||
+                            "",
+
+                        status:
+                            rowData.status ||
+                            "",
+                    };
+                }
+            );
+
+
+        // ==========================================
+        // GET TEACHER CLASS
+        // ==========================================
+
+        let teacherClass = null;
+
+
+        if (
+            req.user.role === "teacher"
+        ) {
+
+            teacherClass =
+                await getTeacherAssignedClass(
+                    req
+                );
+
+
+            if (!teacherClass) {
+
+                return res.status(403).json({
+                    success: false,
+                    message:
+                        "You are not assigned to any class",
+                });
+            }
+        }
+
+
+        // ==========================================
+        // VALIDATE ROWS
+        // ==========================================
+
+        const errors = [];
+        const validRows = [];
+
+        const rollNumbersInExcel =
+            new Set();
+
+
+        for (
+            const row of normalizedRows
+        ) {
+
+            const rollNo =
+                String(row.rollNo).trim();
+
+            const name =
+                String(row.name).trim();
+
+            const className =
+                String(row.className).trim();
+
+            const status =
+                String(row.status).trim();
+
+
+            // ======================================
+            // ROLL NUMBER
+            // ======================================
+
+            if (!rollNo) {
+
+                errors.push({
+                    row:
+                        row.rowNumber,
+
+                    message:
+                        "Roll number is required",
+                });
+
+                continue;
+            }
+
+
+            // ======================================
+            // NAME
+            // ======================================
+
+            if (!name) {
+
+                errors.push({
+                    row:
+                        row.rowNumber,
+
+                    message:
+                        "Student name is required",
+                });
+
+                continue;
+            }
+
+
+            // ======================================
+            // CLASS
+            // ======================================
+
+            if (!className) {
+
+                errors.push({
+                    row:
+                        row.rowNumber,
+
+                    message:
+                        "Class is required",
+                });
+
+                continue;
+            }
+
+
+            // ======================================
+            // TEACHER CLASS CHECK
+            // ======================================
+
+            if (
+                req.user.role === "teacher"
+            ) {
+
+                const excelClass =
+                    className.toLowerCase();
+
+                const assignedClass =
+                    teacherClass.className
+                        .trim()
+                        .toLowerCase();
+
+
+                if (
+                    excelClass !==
+                    assignedClass
+                ) {
+
+                    errors.push({
+
+                        row:
+                            row.rowNumber,
+
+                        message:
+                            `Teacher can only upload students for assigned class "${teacherClass.className}"`,
+                    });
+
+                    continue;
+                }
+            }
+
+
+            // ======================================
+            // DUPLICATE ROLL
+            // ======================================
+
+            if (
+                rollNumbersInExcel.has(
+                    rollNo
+                )
+            ) {
+
+                errors.push({
+
+                    row:
+                        row.rowNumber,
+
+                    message:
+                        `Duplicate roll number "${rollNo}" in Excel file`,
+                });
+
+                continue;
+            }
+
+
+            rollNumbersInExcel.add(
+                rollNo
+            );
+
+
+            // ======================================
+            // STATUS
+            // ======================================
+
+            let active = true;
+
+
+            if (status) {
+
+                const normalizedStatus =
+                    status.toLowerCase();
+
+
+                if (
+                    normalizedStatus ===
+                    "active" ||
+                    normalizedStatus ===
+                    "true" ||
+                    normalizedStatus ===
+                    "1"
+                ) {
+
+                    active = true;
+
+                } else if (
+                    normalizedStatus ===
+                    "inactive" ||
+                    normalizedStatus ===
+                    "false" ||
+                    normalizedStatus ===
+                    "0"
+                ) {
+
+                    active = false;
+
+                } else {
+
+                    errors.push({
+
+                        row:
+                            row.rowNumber,
+
+                        message:
+                            `Invalid status "${status}". Use Active or Inactive`,
+                    });
+
+                    continue;
+                }
+            }
+
+
+            validRows.push({
+
+                rowNumber:
+                    row.rowNumber,
+
+                rollNo,
+
+                name,
+
+                className,
+
+                active,
+            });
+        }
+
+
+        // ==========================================
+        // STOP ON VALIDATION ERRORS
+        // ==========================================
+
+        if (
+            errors.length > 0
+        ) {
+
+            return res.status(400).json({
+
+                success: false,
+
+                message:
+                    "Excel validation failed",
+
+                totalRows:
+                    normalizedRows.length,
+
+                validRows:
+                    validRows.length,
+
+                failedRows:
+                    errors.length,
+
+                errors,
+            });
+        }
+
+
+        // ==========================================
+        // FIND CLASSES
+        // ==========================================
+
+        let classes;
+
+
+        if (
+            req.user.role === "teacher"
+        ) {
+
+            classes = [
+                teacherClass,
+            ];
+
+        } else {
+
+            const classNames = [
+                ...new Set(
+                    validRows.map(
+                        (row) =>
+                            row.className.trim()
+                    )
+                ),
+            ];
+
+
+            classes =
+                await Class.find({
+                    className: {
+                        $in:
+                            classNames,
+                    },
+                }).select(
+                    "_id className classTeacher"
+                );
+        }
+
+
+        // ==========================================
+        // CLASS MAP
+        // ==========================================
+
+        const classMap =
+            new Map();
+
+
+        classes.forEach(
+            (classData) => {
+
+                classMap.set(
+
+                    classData.className
+                        .trim()
+                        .toLowerCase(),
+
+                    classData._id
+                );
+            }
+        );
+
+
+        // ==========================================
+        // INVALID CLASS CHECK
+        // ==========================================
+
+        const classErrors = [];
+
+
+        for (
+            const row of validRows
+        ) {
+
+            const classKey =
+                row.className
+                    .trim()
+                    .toLowerCase();
+
+
+            if (
+                !classMap.has(
+                    classKey
+                )
+            ) {
+
+                classErrors.push({
+
+                    row:
+                        row.rowNumber,
+
+                    message:
+                        `Class "${row.className}" does not exist`,
+                });
+            }
+        }
+
+
+        if (
+            classErrors.length > 0
+        ) {
+
+            return res.status(400).json({
+
+                success: false,
+
+                message:
+                    "Some classes in the Excel file do not exist",
+
+                totalRows:
+                    normalizedRows.length,
+
+                failedRows:
+                    classErrors.length,
+
+                errors:
+                    classErrors,
+            });
+        }
+
+
+        // ==========================================
+        // FIND EXISTING STUDENTS
+        // ==========================================
+
+        const rollNumbers =
+            validRows.map(
+                (row) =>
+                    row.rollNo
+            );
+
+
+        const existingStudents =
+            await Student.find({
+
+                rollNo: {
+                    $in:
+                        rollNumbers,
+                },
+
+            }).select(
+                "_id rollNo classId"
+            );
+
+
+        const existingStudentMap =
+            new Map();
+
+
+        existingStudents.forEach(
+            (student) => {
+
+                existingStudentMap.set(
+                    student.rollNo,
+                    student
+                );
+            }
+        );
+
+
+        // ==========================================
+        // TEACHER SECURITY CHECK
+        // ==========================================
+
+        if (
+            req.user.role === "teacher"
+        ) {
+
+            const unauthorizedRows =
+                [];
+
+
+            for (
+                const row of validRows
+            ) {
+
+                const existingStudent =
+                    existingStudentMap.get(
+                        row.rollNo
+                    );
+
+
+                if (
+                    existingStudent &&
+                    !teacherHasClassAccess(
+                        teacherClass,
+                        existingStudent.classId
+                    )
+                ) {
+
+                    unauthorizedRows.push({
+
+                        row:
+                            row.rowNumber,
+
+                        message:
+                            `Roll number "${row.rollNo}" belongs to a student in another class`,
+                    });
+                }
+            }
+
+
+            if (
+                unauthorizedRows.length > 0
+            ) {
+
+                return res.status(403).json({
+
+                    success: false,
+
+                    message:
+                        "You are not allowed to modify students outside your assigned class",
+
+                    errors:
+                        unauthorizedRows,
+                });
+            }
+        }
+
+
+        // ==========================================
+        // BULK OPERATIONS
+        // ==========================================
+
+        const operations =
+            validRows.map(
+                (row) => {
+
+                    const classId =
+                        classMap.get(
+                            row.className
+                                .trim()
+                                .toLowerCase()
+                        );
+
+
+                    return {
+
+                        updateOne: {
+
+                            filter: {
+                                rollNo:
+                                    row.rollNo,
+                            },
+
+                            update: {
+
+                                $set: {
+
+                                    name:
+                                        row.name,
+
+                                    classId,
+
+                                    active:
+                                        row.active === true,
+                                },
+                            },
+
+                            upsert: true,
+                        },
+                    };
+                }
+            );
+
+
+        // ==========================================
+        // EXECUTE
+        // ==========================================
+
+        const result =
+            await Student.bulkWrite(
+                operations,
+                {
+                    ordered: true,
+                }
+            );
+
 
         // ==========================================
         // RESPONSE
         // ==========================================
 
-        return res.status(201).json({
-            success: true,
-            message: "Student created successfully",
+        return res.status(200).json({
 
-            student: {
-                _id: student._id,
-                rollNo: student.rollNo,
-                name: student.name,
-                classId: student.classId,
-                active: student.active,
+            success: true,
+
+            message:
+                "Bulk student upload completed successfully",
+
+            summary: {
+
+                total:
+                    validRows.length,
+
+                created:
+                    result.upsertedCount,
+
+                updated:
+                    result.modifiedCount,
+
+                unchanged:
+                    result.matchedCount -
+                    result.modifiedCount,
             },
         });
 
     } catch (error) {
-        console.error("Create Student Error:", error);
 
-        // Handle duplicate roll number
-        if (error.code === 11000) {
+        console.error(
+            "Bulk Student Upload Error:",
+            error
+        );
+
+
+        if (
+            error.code === 11000
+        ) {
+
             return res.status(400).json({
+
                 success: false,
-                message: "A student with this roll number already exists",
+
+                message:
+                    "Duplicate roll number detected. Please check the Excel file.",
             });
         }
 
+
         return res.status(500).json({
+
             success: false,
-            message: "Server error",
+
+            message:
+                "Server error while processing Excel file",
         });
     }
 };
@@ -136,24 +1110,74 @@ const createStudent = async (req, res) => {
 // GET /api/students
 // ==========================================
 
-const getAllStudents = async (req, res) => {
+const getAllStudents = async (
+    req,
+    res
+) => {
+
     try {
-        const students = await Student.find()
-            .populate("classId", "className")
-            .sort({ rollNo: 1 });
+
+        let query = {};
+
+
+        if (
+            req.user.role === "teacher"
+        ) {
+
+            const teacherClass =
+                await getTeacherAssignedClass(
+                    req
+                );
+
+
+            if (!teacherClass) {
+
+                return res.status(403).json({
+                    success: false,
+                    message:
+                        "You are not assigned to any class",
+                });
+            }
+
+
+            query.classId =
+                teacherClass._id;
+        }
+
+
+        const students =
+            await Student.find(query)
+                .populate(
+                    "classId",
+                    "className"
+                )
+                .sort({
+                    rollNo: 1,
+                });
+
 
         return res.status(200).json({
+
             success: true,
-            count: students.length,
+
+            count:
+                students.length,
+
             students,
         });
 
     } catch (error) {
-        console.error("Get Students Error:", error);
+
+        console.error(
+            "Get Students Error:",
+            error
+        );
+
 
         return res.status(500).json({
             success: false,
-            message: "Server error",
+            message:
+                "Server error",
         });
     }
 };
@@ -164,46 +1188,104 @@ const getAllStudents = async (req, res) => {
 // GET /api/students/:id
 // ==========================================
 
-const getStudentById = async (req, res) => {
+const getStudentById = async (
+    req,
+    res
+) => {
+
     try {
-        const { id } = req.params;
 
-        // ==========================================
-        // VALIDATE STUDENT ID
-        // ==========================================
+        const { id } =
+            req.params;
 
-        if (!mongoose.Types.ObjectId.isValid(id)) {
+
+        if (
+            !mongoose.Types.ObjectId.isValid(
+                id
+            )
+        ) {
+
             return res.status(400).json({
                 success: false,
-                message: "Invalid student ID",
+                message:
+                    "Invalid student ID",
             });
         }
 
-        // ==========================================
-        // FIND STUDENT
-        // ==========================================
 
-        const student = await Student.findById(id)
-            .populate("classId", "className");
+        const student =
+            await Student.findById(id)
+                .populate(
+                    "classId",
+                    "className"
+                );
+
 
         if (!student) {
+
             return res.status(404).json({
                 success: false,
-                message: "Student not found",
+                message:
+                    "Student not found",
             });
         }
 
+
+        if (
+            req.user.role === "teacher"
+        ) {
+
+            const teacherClass =
+                await getTeacherAssignedClass(
+                    req
+                );
+
+
+            if (!teacherClass) {
+
+                return res.status(403).json({
+                    success: false,
+                    message:
+                        "You are not assigned to any class",
+                });
+            }
+
+
+            if (
+                !teacherHasClassAccess(
+                    teacherClass,
+                    student.classId?._id
+                )
+            ) {
+
+                return res.status(403).json({
+                    success: false,
+                    message:
+                        "You can only access students from your assigned class",
+                });
+            }
+        }
+
+
         return res.status(200).json({
+
             success: true,
+
             student,
         });
 
     } catch (error) {
-        console.error("Get Student By ID Error:", error);
+
+        console.error(
+            "Get Student By ID Error:",
+            error
+        );
+
 
         return res.status(500).json({
             success: false,
-            message: "Server error",
+            message:
+                "Server error",
         });
     }
 };
@@ -214,9 +1296,17 @@ const getStudentById = async (req, res) => {
 // PUT /api/students/:id
 // ==========================================
 
-const updateStudent = async (req, res) => {
+const updateStudent = async (
+    req,
+    res
+) => {
+
     try {
-        const { id } = req.params;
+
+        const { id } =
+            req.params;
+
+
         const {
             rollNo,
             name,
@@ -224,32 +1314,88 @@ const updateStudent = async (req, res) => {
             active,
         } = req.body;
 
+
         // ==========================================
-        // VALIDATE STUDENT ID
+        // VALIDATE ID
         // ==========================================
 
-        if (!mongoose.Types.ObjectId.isValid(id)) {
+        if (
+            !mongoose.Types.ObjectId.isValid(
+                id
+            )
+        ) {
+
             return res.status(400).json({
                 success: false,
-                message: "Invalid student ID",
+                message:
+                    "Invalid student ID",
             });
         }
+
 
         // ==========================================
         // FIND STUDENT
         // ==========================================
 
-        const student = await Student.findById(id);
+        const student =
+            await Student.findById(id);
+
 
         if (!student) {
+
             return res.status(404).json({
                 success: false,
-                message: "Student not found",
+                message:
+                    "Student not found",
             });
         }
 
+
         // ==========================================
-        // CHECK AT LEAST ONE FIELD
+        // TEACHER ACCESS
+        // ==========================================
+
+        let teacherClass = null;
+
+
+        if (
+            req.user.role === "teacher"
+        ) {
+
+            teacherClass =
+                await getTeacherAssignedClass(
+                    req
+                );
+
+
+            if (!teacherClass) {
+
+                return res.status(403).json({
+                    success: false,
+                    message:
+                        "You are not assigned to any class",
+                });
+            }
+
+
+            if (
+                !teacherHasClassAccess(
+                    teacherClass,
+                    student.classId
+                )
+            ) {
+
+                return res.status(403).json({
+                    success: false,
+                    message:
+                        "You can only edit students from your assigned class",
+                });
+            }
+        }
+
+
+        // ==========================================
+        // CHECK FIELDS
         // ==========================================
 
         if (
@@ -258,120 +1404,198 @@ const updateStudent = async (req, res) => {
             classId === undefined &&
             active === undefined
         ) {
+
             return res.status(400).json({
                 success: false,
-                message: "No fields provided for update",
+                message:
+                    "No fields provided for update",
             });
         }
 
+
         // ==========================================
-        // UPDATE ROLL NUMBER
+        // ROLL NUMBER
         // ==========================================
 
-        if (rollNo !== undefined) {
-            if (typeof rollNo !== "string") {
-                return res.status(400).json({
-                    success: false,
-                    message: "Roll number must be a string",
-                });
-            }
+        if (
+            rollNo !== undefined
+        ) {
 
-            const normalizedRollNo = rollNo.trim();
+            const normalizedRollNo =
+                String(rollNo).trim();
+
 
             if (!normalizedRollNo) {
+
                 return res.status(400).json({
                     success: false,
-                    message: "Roll number cannot be empty",
+                    message:
+                        "Roll number cannot be empty",
                 });
             }
 
-            const existingStudent = await Student.findOne({
-                rollNo: normalizedRollNo,
-                _id: { $ne: id },
-            });
+
+            const existingStudent =
+                await Student.findOne({
+
+                    rollNo:
+                        normalizedRollNo,
+
+                    _id: {
+                        $ne: id,
+                    },
+                });
+
 
             if (existingStudent) {
+
                 return res.status(400).json({
                     success: false,
-                    message: "A student with this roll number already exists",
+                    message:
+                        "A student with this roll number already exists",
                 });
             }
 
-            student.rollNo = normalizedRollNo;
+
+            student.rollNo =
+                normalizedRollNo;
         }
 
+
         // ==========================================
-        // UPDATE NAME
+        // NAME
         // ==========================================
 
-        if (name !== undefined) {
-            if (typeof name !== "string") {
-                return res.status(400).json({
-                    success: false,
-                    message: "Name must be a string",
-                });
-            }
+        if (
+            name !== undefined
+        ) {
 
-            const normalizedName = name.trim();
+            const normalizedName =
+                String(name).trim();
+
 
             if (!normalizedName) {
+
                 return res.status(400).json({
                     success: false,
-                    message: "Name cannot be empty",
+                    message:
+                        "Name cannot be empty",
                 });
             }
 
-            student.name = normalizedName;
+
+            student.name =
+                normalizedName;
         }
 
+
         // ==========================================
-        // UPDATE CLASS
+        // CLASS
         // ==========================================
 
-        if (classId !== undefined) {
+        if (
+            classId !== undefined
+        ) {
 
-            // Allow class to be changed, but don't allow null
             if (!classId) {
+
                 return res.status(400).json({
                     success: false,
-                    message: "Class ID is required",
+                    message:
+                        "Class ID is required",
                 });
             }
 
-            if (!mongoose.Types.ObjectId.isValid(classId)) {
+
+            if (
+                !mongoose.Types.ObjectId.isValid(
+                    classId
+                )
+            ) {
+
                 return res.status(400).json({
                     success: false,
-                    message: "Invalid class ID",
+                    message:
+                        "Invalid class ID",
                 });
             }
 
-            const classData = await Class.findById(classId);
+
+            const classData =
+                await Class.findById(
+                    classId
+                );
+
 
             if (!classData) {
+
                 return res.status(404).json({
                     success: false,
-                    message: "Class not found",
+                    message:
+                        "Class not found",
                 });
             }
 
-            student.classId = classId;
+
+            // ======================================
+            // TEACHER CANNOT MOVE STUDENT
+            // ======================================
+
+            if (
+                req.user.role === "teacher"
+            ) {
+
+                if (
+                    !teacherHasClassAccess(
+                        teacherClass,
+                        classId
+                    )
+                ) {
+
+                    return res.status(403).json({
+                        success: false,
+                        message:
+                            "Teachers cannot move students to another class",
+                    });
+                }
+            }
+
+
+            student.classId =
+                classId;
         }
 
+
         // ==========================================
-        // UPDATE ACTIVE STATUS
+        // ACTIVE STATUS
         // ==========================================
 
-        if (active !== undefined) {
+        if (
+            active !== undefined
+        ) {
 
-            if (typeof active !== "boolean") {
+            const normalizedActive =
+                normalizeActiveValue(
+                    active
+                );
+
+
+            if (
+                !normalizedActive.valid
+            ) {
+
                 return res.status(400).json({
                     success: false,
-                    message: "Active must be true or false",
+                    message:
+                        "Active must be true or false",
                 });
             }
 
-            student.active = active;
+
+            student.active =
+                normalizedActive.value;
         }
+
 
         // ==========================================
         // SAVE
@@ -379,43 +1603,108 @@ const updateStudent = async (req, res) => {
 
         await student.save();
 
+
         // ==========================================
-        // POPULATE CLASS
+        // RE-FETCH FROM DATABASE
+        // ==========================================
+        //
+        // This guarantees that the response contains
+        // the actual value stored in MongoDB.
         // ==========================================
 
-        await student.populate("classId", "className");
+        const updatedStudent =
+            await Student.findById(id)
+                .populate(
+                    "classId",
+                    "className"
+                );
+
+
+        if (!updatedStudent) {
+
+            return res.status(404).json({
+                success: false,
+                message:
+                    "Student not found after update",
+            });
+        }
+
+
+        console.log(
+            "Student updated:",
+            {
+                id:
+                    updatedStudent._id,
+
+                rollNo:
+                    updatedStudent.rollNo,
+
+                name:
+                    updatedStudent.name,
+
+                active:
+                    updatedStudent.active,
+
+                classId:
+                    updatedStudent.classId?._id,
+            }
+        );
+
 
         // ==========================================
         // RESPONSE
         // ==========================================
 
         return res.status(200).json({
+
             success: true,
-            message: "Student updated successfully",
+
+            message:
+                "Student updated successfully",
 
             student: {
-                _id: student._id,
-                rollNo: student.rollNo,
-                name: student.name,
-                classId: student.classId,
-                active: student.active,
+
+                _id:
+                    updatedStudent._id,
+
+                rollNo:
+                    updatedStudent.rollNo,
+
+                name:
+                    updatedStudent.name,
+
+                classId:
+                    updatedStudent.classId,
+
+                active:
+                    updatedStudent.active === true,
             },
         });
 
     } catch (error) {
-        console.error("Update Student Error:", error);
 
-        // Handle duplicate roll number
-        if (error.code === 11000) {
+        console.error(
+            "Update Student Error:",
+            error
+        );
+
+
+        if (
+            error.code === 11000
+        ) {
+
             return res.status(400).json({
                 success: false,
-                message: "A student with this roll number already exists",
+                message:
+                    "A student with this roll number already exists",
             });
         }
 
+
         return res.status(500).json({
             success: false,
-            message: "Server error",
+            message:
+                "Server error",
         });
     }
 };
@@ -426,64 +1715,140 @@ const updateStudent = async (req, res) => {
 // DELETE /api/students/:id
 // ==========================================
 
-const deleteStudent = async (req, res) => {
+const deleteStudent = async (
+    req,
+    res
+) => {
+
     try {
-        const { id } = req.params;
+
+        const { id } =
+            req.params;
+
 
         // ==========================================
-        // VALIDATE STUDENT ID
+        // VALIDATE ID
         // ==========================================
 
-        if (!mongoose.Types.ObjectId.isValid(id)) {
+        if (
+            !mongoose.Types.ObjectId.isValid(
+                id
+            )
+        ) {
+
             return res.status(400).json({
                 success: false,
-                message: "Invalid student ID",
+                message:
+                    "Invalid student ID",
             });
         }
+
 
         // ==========================================
         // FIND STUDENT
         // ==========================================
 
-        const student = await Student.findById(id);
+        const student =
+            await Student.findById(id);
+
 
         if (!student) {
+
             return res.status(404).json({
                 success: false,
-                message: "Student not found",
+                message:
+                    "Student not found",
             });
         }
 
+
         // ==========================================
-        // DELETE STUDENT
+        // TEACHER ACCESS
+        // ==========================================
+
+        if (
+            req.user.role === "teacher"
+        ) {
+
+            const teacherClass =
+                await getTeacherAssignedClass(
+                    req
+                );
+
+
+            if (!teacherClass) {
+
+                return res.status(403).json({
+                    success: false,
+                    message:
+                        "You are not assigned to any class",
+                });
+            }
+
+
+            if (
+                !teacherHasClassAccess(
+                    teacherClass,
+                    student.classId
+                )
+            ) {
+
+                return res.status(403).json({
+                    success: false,
+                    message:
+                        "You can only delete students from your assigned class",
+                });
+            }
+        }
+
+
+        // ==========================================
+        // DELETE
         // ==========================================
 
         await Student.findByIdAndDelete(id);
 
+
         return res.status(200).json({
+
             success: true,
-            message: "Student deleted successfully",
+
+            message:
+                "Student deleted successfully",
         });
 
     } catch (error) {
-        console.error("Delete Student Error:", error);
+
+        console.error(
+            "Delete Student Error:",
+            error
+        );
+
 
         return res.status(500).json({
             success: false,
-            message: "Server error",
+            message:
+                "Server error",
         });
     }
 };
 
 
 // ==========================================
-// EXPORT FUNCTIONS
+// EXPORT
 // ==========================================
 
 module.exports = {
+
     createStudent,
+
+    bulkUploadStudents,
+
     getAllStudents,
+
     getStudentById,
+
     updateStudent,
+
     deleteStudent,
 };
