@@ -4,6 +4,17 @@ const Student = require("../models/Student");
 const Attendance = require("../models/Attendance");
 
 // ==========================================
+// HELPER
+// NORMALIZE ATTENDANCE STATUS
+// ==========================================
+
+const normalizeStatus = (status) => {
+    return String(status || "")
+        .trim()
+        .toLowerCase();
+};
+
+// ==========================================
 // GET ADMIN DASHBOARD
 // GET /api/dashboard
 // ADMIN ONLY
@@ -11,7 +22,6 @@ const Attendance = require("../models/Attendance");
 
 const getDashboard = async (req, res) => {
     try {
-
         // ==========================================
         // AUTHENTICATION
         // ==========================================
@@ -35,142 +45,380 @@ const getDashboard = async (req, res) => {
         }
 
         // ==========================================
-        // GET COUNTS
+        // GET BASIC COUNTS
         // ==========================================
 
-        const totalTeachers = await Teacher.countDocuments();
+        const totalTeachers =
+            await Teacher.countDocuments();
 
-        const totalClasses = await Class.countDocuments();
+        const totalClasses =
+            await Class.countDocuments();
 
-        const totalStudents = await Student.countDocuments({
-            active: true,
-        });
+        const totalStudents =
+            await Student.countDocuments({
+                active: true,
+            });
 
         const totalAttendanceRecords =
             await Attendance.countDocuments();
 
         // ==========================================
-        // CALCULATE OVERALL ATTENDANCE
+        // GET ALL ATTENDANCE RECORDS
+        //
+        // We use ALL attendance records here because
+        // class performance must be calculated from
+        // the complete attendance history.
         // ==========================================
 
-        const attendanceRecords = await Attendance.find({})
-            .select("students");
+        const allAttendance =
+            await Attendance.find({})
+                .populate(
+                    "classId",
+                    "className"
+                )
+                .populate(
+                    "markedBy",
+                    "name email"
+                )
+                .select(
+                    "classId date markedBy students createdAt"
+                )
+                .sort({
+                    date: -1,
+                    createdAt: -1,
+                });
+
+        // ==========================================
+        // CALCULATE OVERALL ATTENDANCE
+        // ==========================================
 
         let totalPresent = 0;
         let totalAbsent = 0;
 
-        attendanceRecords.forEach((attendance) => {
-
-            attendance.students.forEach((student) => {
-
-                if (student.status === "Present") {
-                    totalPresent++;
+        allAttendance.forEach(
+            (attendance) => {
+                if (
+                    !Array.isArray(
+                        attendance.students
+                    )
+                ) {
+                    return;
                 }
 
-                else if (student.status === "Absent") {
-                    totalAbsent++;
-                }
+                attendance.students.forEach(
+                    (student) => {
+                        const status =
+                            normalizeStatus(
+                                student.status
+                            );
 
-            });
-
-        });
+                        if (
+                            status ===
+                            "present"
+                        ) {
+                            totalPresent++;
+                        } else if (
+                            status ===
+                            "absent"
+                        ) {
+                            totalAbsent++;
+                        }
+                    }
+                );
+            }
+        );
 
         const totalAttendance =
-            totalPresent + totalAbsent;
+            totalPresent +
+            totalAbsent;
 
         const overallAttendance =
             totalAttendance > 0
                 ? Number(
-                    (
-                        (totalPresent / totalAttendance) *
-                        100
-                    ).toFixed(2)
-                )
+                      (
+                          (totalPresent /
+                              totalAttendance) *
+                          100
+                      ).toFixed(2)
+                  )
                 : 0;
 
         // ==========================================
-        // RECENT ATTENDANCE
+        // CLASS PERFORMANCE
+        //
+        // IMPORTANT:
+        // Calculate attendance using ALL records
+        // for each class.
+        //
+        // Example:
+        //
+        // Standard-2A:
+        // Day 1 -> 0 Present / 5 Absent
+        // Day 2 -> 0 Present / 3 Absent
+        // Day 3 -> 2 Present / 7 Absent
+        //
+        // Overall:
+        // Present = 2
+        // Absent = 15
+        // Attendance = 11.76%
+        //
+        // Therefore, one 100% attendance day will
+        // NOT incorrectly make the class 100%.
         // ==========================================
 
-        const recentAttendance = await Attendance.find({})
-            .populate("classId", "className")
-            .populate("markedBy", "name email")
-            .select(
-                "classId date markedBy students createdAt"
-            )
-            .sort({
-                date: -1,
-            })
-            .limit(5);
+        const classPerformanceMap =
+            new Map();
+
+        allAttendance.forEach(
+            (attendance) => {
+                // ----------------------------------
+                // GET CLASS ID
+                // ----------------------------------
+
+                const classId =
+                    attendance.classId?._id
+                        ?.toString();
+
+                // If class no longer exists,
+                // ignore this attendance record.
+                if (!classId) {
+                    return;
+                }
+
+                const className =
+                    attendance
+                        .classId
+                        ?.className ||
+                    "Unknown Class";
+
+                // ----------------------------------
+                // CREATE CLASS ENTRY
+                // ----------------------------------
+
+                if (
+                    !classPerformanceMap.has(
+                        classId
+                    )
+                ) {
+                    classPerformanceMap.set(
+                        classId,
+                        {
+                            classId,
+                            className,
+                            attendanceDays: 0,
+                            present: 0,
+                            absent: 0,
+                        }
+                    );
+                }
+
+                const classData =
+                    classPerformanceMap.get(
+                        classId
+                    );
+
+                // ----------------------------------
+                // COUNT ATTENDANCE DAY
+                // ----------------------------------
+
+                classData.attendanceDays++;
+
+                // ----------------------------------
+                // COUNT PRESENT / ABSENT
+                // ----------------------------------
+
+                if (
+                    !Array.isArray(
+                        attendance.students
+                    )
+                ) {
+                    return;
+                }
+
+                attendance.students.forEach(
+                    (student) => {
+                        const status =
+                            normalizeStatus(
+                                student.status
+                            );
+
+                        if (
+                            status ===
+                            "present"
+                        ) {
+                            classData.present++;
+                        } else if (
+                            status ===
+                            "absent"
+                        ) {
+                            classData.absent++;
+                        }
+                    }
+                );
+            }
+        );
+
+        // ==========================================
+        // FORMAT CLASS PERFORMANCE
+        // ==========================================
+
+        const classPerformance =
+            Array.from(
+                classPerformanceMap.values()
+            ).map(
+                (classData) => {
+                    const total =
+                        classData.present +
+                        classData.absent;
+
+                    const percentage =
+                        total > 0
+                            ? Number(
+                                  (
+                                      (classData.present /
+                                          total) *
+                                      100
+                                  ).toFixed(2)
+                              )
+                            : 0;
+
+                    return {
+                        classId:
+                            classData.classId,
+
+                        className:
+                            classData.className,
+
+                        attendanceDays:
+                            classData.attendanceDays,
+
+                        present:
+                            classData.present,
+
+                        absent:
+                            classData.absent,
+
+                        percentage,
+                    };
+                }
+            );
+
+        // ==========================================
+        // SORT CLASS PERFORMANCE
+        // HIGHEST ATTENDANCE FIRST
+        // ==========================================
+
+        classPerformance.sort(
+            (a, b) =>
+                b.percentage -
+                a.percentage
+        );
+
+        // ==========================================
+        // GET RECENT ATTENDANCE
+        //
+        // Only the latest 5 records are displayed
+        // in the dashboard table.
+        // ==========================================
+
+        const recentAttendance =
+            allAttendance.slice(0, 5);
 
         // ==========================================
         // FORMAT RECENT ATTENDANCE
         // ==========================================
 
         const recentAttendanceFormatted =
-            recentAttendance.map((attendance) => {
+            recentAttendance.map(
+                (attendance) => {
+                    let present = 0;
+                    let absent = 0;
 
-                let present = 0;
-                let absent = 0;
-
-                attendance.students.forEach((student) => {
-
-                    if (student.status === "Present") {
-                        present++;
-                    }
-
-                    else if (student.status === "Absent") {
-                        absent++;
-                    }
-
-                });
-
-                const totalStudents =
-                    attendance.students.length;
-
-                const percentage =
-                    totalStudents > 0
-                        ? Number(
-                            (
-                                (present / totalStudents) *
-                                100
-                            ).toFixed(2)
+                    if (
+                        Array.isArray(
+                            attendance.students
                         )
-                        : 0;
+                    ) {
+                        attendance.students.forEach(
+                            (student) => {
+                                const status =
+                                    normalizeStatus(
+                                        student.status
+                                    );
 
-                return {
-                    attendanceId: attendance._id,
+                                if (
+                                    status ===
+                                    "present"
+                                ) {
+                                    present++;
+                                } else if (
+                                    status ===
+                                    "absent"
+                                ) {
+                                    absent++;
+                                }
+                            }
+                        );
+                    }
 
-                    classId:
-                        attendance.classId?._id || null,
+                    const totalStudents =
+                        present + absent;
 
-                    className:
-                        attendance.classId?.className ||
-                        "Unknown",
+                    const percentage =
+                        totalStudents > 0
+                            ? Number(
+                                  (
+                                      (present /
+                                          totalStudents) *
+                                      100
+                                  ).toFixed(2)
+                              )
+                            : 0;
 
-                    date: attendance.date,
+                    return {
+                        attendanceId:
+                            attendance._id,
 
-                    markedBy:
-                        attendance.markedBy || null,
+                        classId:
+                            attendance
+                                .classId
+                                ?._id ||
+                            null,
 
-                    totalStudents,
+                        className:
+                            attendance
+                                .classId
+                                ?.className ||
+                            "Unknown Class",
 
-                    present,
+                        date:
+                            attendance.date,
 
-                    absent,
+                        markedBy:
+                            attendance.markedBy ||
+                            null,
 
-                    percentage,
-                };
+                        totalStudents,
 
-            });
+                        present,
+
+                        absent,
+
+                        percentage,
+                    };
+                }
+            );
 
         // ==========================================
         // RESPONSE
         // ==========================================
 
         return res.status(200).json({
-
             success: true,
+
+            // --------------------------------------
+            // DASHBOARD STATISTICS
+            // --------------------------------------
 
             statistics: {
                 totalTeachers,
@@ -180,12 +428,26 @@ const getDashboard = async (req, res) => {
                 overallAttendance,
             },
 
+            // --------------------------------------
+            // CLASS-LEVEL ATTENDANCE
+            //
+            // Used by frontend for:
+            // - Best Class
+            // - Needs Attention
+            // --------------------------------------
+
+            classPerformance,
+
+            // --------------------------------------
+            // RECENT INDIVIDUAL ATTENDANCE
+            //
+            // Used by dashboard table.
+            // --------------------------------------
+
             recentAttendance:
                 recentAttendanceFormatted,
         });
-
     } catch (error) {
-
         console.error(
             "Get Dashboard Error:",
             error
@@ -195,10 +457,8 @@ const getDashboard = async (req, res) => {
             success: false,
             message: "Server error",
         });
-
     }
 };
-
 
 // ==========================================
 // EXPORT

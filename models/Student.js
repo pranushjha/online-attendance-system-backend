@@ -9,7 +9,6 @@ const studentSchema = new mongoose.Schema(
         rollNo: {
             type: String,
             required: true,
-            unique: true,
             trim: true,
         },
 
@@ -47,4 +46,38 @@ const studentSchema = new mongoose.Schema(
     }
 );
 
-module.exports = mongoose.model("Student", studentSchema);
+
+// ==================================================
+// COMPOUND UNIQUE INDEX
+// ==================================================
+//
+// Roll number must be unique INSIDE a class.
+//
+// Example:
+//
+// Standard-1A → Roll 1  ✅
+// Standard-2A → Roll 1  ✅
+// Standard-3A → Roll 1  ✅
+//
+// But:
+//
+// Standard-1A → Roll 1
+// Standard-1A → Roll 1  ❌
+//
+// ==================================================
+
+studentSchema.index(
+    {
+        classId: 1,
+        rollNo: 1,
+    },
+    {
+        unique: true,
+    }
+);
+
+
+module.exports = mongoose.model(
+    "Student",
+    studentSchema
+);

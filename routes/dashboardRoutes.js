@@ -5,8 +5,8 @@ const router = express.Router();
 const dashboardController = require("../controllers/dashboardController");
 
 const authMiddleware = require("../middleware/authMiddleware");
-const roleMiddleware = require("../middleware/roleMiddleware");
 
+const roleMiddleware = require("../middleware/roleMiddleware");
 
 // ==========================================
 // ADMIN DASHBOARD
@@ -20,7 +20,6 @@ router.get(
     roleMiddleware("admin"),
     dashboardController.getDashboard
 );
-
 
 // ==========================================
 // EXPORT ROUTER

@@ -56,44 +56,56 @@ const teacherHasClassAccess = (
 const normalizeActiveValue = (value) => {
 
     if (typeof value === "boolean") {
+
         return {
             valid: true,
             value,
         };
+
     }
+
 
     if (typeof value === "string") {
 
         const normalized =
             value.trim().toLowerCase();
 
+
         if (
             normalized === "true" ||
             normalized === "1" ||
             normalized === "active"
         ) {
+
             return {
                 valid: true,
                 value: true,
             };
+
         }
+
 
         if (
             normalized === "false" ||
             normalized === "0" ||
             normalized === "inactive"
         ) {
+
             return {
                 valid: true,
                 value: false,
             };
+
         }
+
     }
+
 
     return {
         valid: false,
         value: null,
     };
+
 };
 
 
@@ -113,10 +125,6 @@ const createStudent = async (req, res) => {
         } = req.body;
 
 
-        // ==========================================
-        // REQUIRED FIELDS
-        // ==========================================
-
         if (
             rollNo === undefined ||
             name === undefined ||
@@ -124,16 +132,16 @@ const createStudent = async (req, res) => {
         ) {
 
             return res.status(400).json({
+
                 success: false,
+
                 message:
                     "Roll number, name and class are required",
+
             });
+
         }
 
-
-        // ==========================================
-        // VALIDATE CLASS ID
-        // ==========================================
 
         if (
             !mongoose.Types.ObjectId.isValid(
@@ -142,10 +150,14 @@ const createStudent = async (req, res) => {
         ) {
 
             return res.status(400).json({
+
                 success: false,
+
                 message:
                     "Invalid class ID",
+
             });
+
         }
 
 
@@ -159,20 +171,28 @@ const createStudent = async (req, res) => {
         if (!normalizedRollNo) {
 
             return res.status(400).json({
+
                 success: false,
+
                 message:
                     "Roll number cannot be empty",
+
             });
+
         }
 
 
         if (!normalizedName) {
 
             return res.status(400).json({
+
                 success: false,
+
                 message:
                     "Student name cannot be empty",
+
             });
+
         }
 
 
@@ -183,13 +203,18 @@ const createStudent = async (req, res) => {
         const classData =
             await Class.findById(classId);
 
+
         if (!classData) {
 
             return res.status(404).json({
+
                 success: false,
+
                 message:
                     "Class not found",
+
             });
+
         }
 
 
@@ -210,10 +235,14 @@ const createStudent = async (req, res) => {
             if (!teacherClass) {
 
                 return res.status(403).json({
+
                     success: false,
+
                     message:
                         "You are not assigned to any class",
+
                 });
+
             }
 
 
@@ -225,31 +254,54 @@ const createStudent = async (req, res) => {
             ) {
 
                 return res.status(403).json({
+
                     success: false,
+
                     message:
                         "You can only manage students from your assigned class",
+
                 });
+
             }
+
         }
 
 
         // ==========================================
         // DUPLICATE ROLL NUMBER
+        //
+        // IMPORTANT:
+        // Roll number is unique PER CLASS.
+        //
+        // Therefore:
+        //
+        // Class A + Roll 1 = allowed
+        // Class B + Roll 1 = allowed
+        // Class A + Roll 1 again = rejected
         // ==========================================
 
         const existingStudent =
             await Student.findOne({
-                rollNo: normalizedRollNo,
+
+                classId,
+
+                rollNo:
+                    normalizedRollNo,
+
             });
 
 
         if (existingStudent) {
 
             return res.status(400).json({
+
                 success: false,
+
                 message:
-                    "A student with this roll number already exists",
+                    `Roll number "${normalizedRollNo}" already exists in this class`,
+
             });
+
         }
 
 
@@ -269,6 +321,7 @@ const createStudent = async (req, res) => {
                 classId,
 
                 active: true,
+
             });
 
 
@@ -301,7 +354,9 @@ const createStudent = async (req, res) => {
 
                 active:
                     student.active === true,
+
             },
+
         });
 
     } catch (error) {
@@ -317,19 +372,28 @@ const createStudent = async (req, res) => {
         ) {
 
             return res.status(400).json({
+
                 success: false,
+
                 message:
-                    "A student with this roll number already exists",
+                    "This roll number already exists in the selected class",
+
             });
+
         }
 
 
         return res.status(500).json({
+
             success: false,
+
             message:
                 "Server error",
+
         });
+
     }
+
 };
 
 
@@ -345,23 +409,19 @@ const bulkUploadStudents = async (
 
     try {
 
-        // ==========================================
-        // CHECK FILE
-        // ==========================================
-
         if (!req.file) {
 
             return res.status(400).json({
+
                 success: false,
+
                 message:
                     "Excel file is required",
+
             });
+
         }
 
-
-        // ==========================================
-        // CHECK FILE TYPE
-        // ==========================================
 
         const fileName =
             req.file.originalname.toLowerCase();
@@ -373,16 +433,16 @@ const bulkUploadStudents = async (
         ) {
 
             return res.status(400).json({
+
                 success: false,
+
                 message:
                     "Only .xlsx and .xls Excel files are allowed",
+
             });
+
         }
 
-
-        // ==========================================
-        // READ EXCEL
-        // ==========================================
 
         const workbook =
             XLSX.read(
@@ -398,10 +458,14 @@ const bulkUploadStudents = async (
         ) {
 
             return res.status(400).json({
+
                 success: false,
+
                 message:
                     "Excel file contains no sheets",
+
             });
+
         }
 
 
@@ -424,10 +488,14 @@ const bulkUploadStudents = async (
         if (!rows.length) {
 
             return res.status(400).json({
+
                 success: false,
+
                 message:
                     "Excel file contains no student data",
+
             });
+
         }
 
 
@@ -446,6 +514,7 @@ const bulkUploadStudents = async (
                     /[\s_-]+/g,
                     ""
                 );
+
         };
 
 
@@ -491,7 +560,9 @@ const bulkUploadStudents = async (
                         status:
                             rowData.status ||
                             "",
+
                     };
+
                 }
             );
 
@@ -516,11 +587,16 @@ const bulkUploadStudents = async (
             if (!teacherClass) {
 
                 return res.status(403).json({
+
                     success: false,
+
                     message:
                         "You are not assigned to any class",
+
                 });
+
             }
+
         }
 
 
@@ -531,6 +607,9 @@ const bulkUploadStudents = async (
         const errors = [];
         const validRows = [];
 
+        // IMPORTANT:
+        // Duplicate is checked using
+        // CLASS + ROLL NUMBER
         const rollNumbersInExcel =
             new Set();
 
@@ -559,14 +638,17 @@ const bulkUploadStudents = async (
             if (!rollNo) {
 
                 errors.push({
+
                     row:
                         row.rowNumber,
 
                     message:
                         "Roll number is required",
+
                 });
 
                 continue;
+
             }
 
 
@@ -577,14 +659,17 @@ const bulkUploadStudents = async (
             if (!name) {
 
                 errors.push({
+
                     row:
                         row.rowNumber,
 
                     message:
                         "Student name is required",
+
                 });
 
                 continue;
+
             }
 
 
@@ -595,14 +680,17 @@ const bulkUploadStudents = async (
             if (!className) {
 
                 errors.push({
+
                     row:
                         row.rowNumber,
 
                     message:
                         "Class is required",
+
                 });
 
                 continue;
+
             }
 
 
@@ -635,10 +723,13 @@ const bulkUploadStudents = async (
 
                         message:
                             `Teacher can only upload students for assigned class "${teacherClass.className}"`,
+
                     });
 
                     continue;
+
                 }
+
             }
 
 
@@ -646,9 +737,13 @@ const bulkUploadStudents = async (
             // DUPLICATE ROLL
             // ======================================
 
+            const excelRollKey =
+                `${className.toLowerCase()}::${rollNo}`;
+
+
             if (
                 rollNumbersInExcel.has(
-                    rollNo
+                    excelRollKey
                 )
             ) {
 
@@ -658,15 +753,17 @@ const bulkUploadStudents = async (
                         row.rowNumber,
 
                     message:
-                        `Duplicate roll number "${rollNo}" in Excel file`,
+                        `Duplicate roll number "${rollNo}" for class "${className}" in Excel file`,
+
                 });
 
                 continue;
+
             }
 
 
             rollNumbersInExcel.add(
-                rollNo
+                excelRollKey
             );
 
 
@@ -714,10 +811,13 @@ const bulkUploadStudents = async (
 
                         message:
                             `Invalid status "${status}". Use Active or Inactive`,
+
                     });
 
                     continue;
+
                 }
+
             }
 
 
@@ -733,7 +833,9 @@ const bulkUploadStudents = async (
                 className,
 
                 active,
+
             });
+
         }
 
 
@@ -762,7 +864,9 @@ const bulkUploadStudents = async (
                     errors.length,
 
                 errors,
+
             });
+
         }
 
 
@@ -795,13 +899,16 @@ const bulkUploadStudents = async (
 
             classes =
                 await Class.find({
+
                     className: {
                         $in:
                             classNames,
                     },
+
                 }).select(
                     "_id className classTeacher"
                 );
+
         }
 
 
@@ -823,7 +930,9 @@ const bulkUploadStudents = async (
                         .toLowerCase(),
 
                     classData._id
+
                 );
+
             }
         );
 
@@ -858,8 +967,11 @@ const bulkUploadStudents = async (
 
                     message:
                         `Class "${row.className}" does not exist`,
+
                 });
+
             }
+
         }
 
 
@@ -882,28 +994,58 @@ const bulkUploadStudents = async (
 
                 errors:
                     classErrors,
+
             });
+
         }
 
 
         // ==========================================
         // FIND EXISTING STUDENTS
+        //
+        // IMPORTANT:
+        // Search by CLASS + ROLL NUMBER
         // ==========================================
 
-        const rollNumbers =
-            validRows.map(
-                (row) =>
-                    row.rollNo
-            );
+        const classRollKeys =
+            validRows.map((row) => {
+
+                const classId =
+                    classMap.get(
+                        row.className
+                            .trim()
+                            .toLowerCase()
+                    );
+
+
+                return {
+
+                    classId,
+
+                    rollNo:
+                        row.rollNo,
+
+                };
+
+            });
 
 
         const existingStudents =
             await Student.find({
 
-                rollNo: {
-                    $in:
-                        rollNumbers,
-                },
+                $or:
+                    classRollKeys.map(
+                        ({
+                            classId,
+                            rollNo,
+                        }) => ({
+
+                            classId,
+
+                            rollNo,
+
+                        })
+                    ),
 
             }).select(
                 "_id rollNo classId"
@@ -917,10 +1059,15 @@ const bulkUploadStudents = async (
         existingStudents.forEach(
             (student) => {
 
+                const key =
+                    `${String(student.classId)}::${student.rollNo}`;
+
+
                 existingStudentMap.set(
-                    student.rollNo,
+                    key,
                     student
                 );
+
             }
         );
 
@@ -941,9 +1088,21 @@ const bulkUploadStudents = async (
                 const row of validRows
             ) {
 
+                const rowClassId =
+                    classMap.get(
+                        row.className
+                            .trim()
+                            .toLowerCase()
+                    );
+
+
+                const key =
+                    `${String(rowClassId)}::${row.rollNo}`;
+
+
                 const existingStudent =
                     existingStudentMap.get(
-                        row.rollNo
+                        key
                     );
 
 
@@ -961,9 +1120,12 @@ const bulkUploadStudents = async (
                             row.rowNumber,
 
                         message:
-                            `Roll number "${row.rollNo}" belongs to a student in another class`,
+                            `Student with roll number "${row.rollNo}" belongs to another class`,
+
                     });
+
                 }
+
             }
 
 
@@ -980,13 +1142,19 @@ const bulkUploadStudents = async (
 
                     errors:
                         unauthorizedRows,
+
                 });
+
             }
+
         }
 
 
         // ==========================================
         // BULK OPERATIONS
+        //
+        // IMPORTANT:
+        // UPSERT FILTER IS CLASS + ROLL NUMBER
         // ==========================================
 
         const operations =
@@ -1006,8 +1174,12 @@ const bulkUploadStudents = async (
                         updateOne: {
 
                             filter: {
+
+                                classId,
+
                                 rollNo:
                                     row.rollNo,
+
                             },
 
                             update: {
@@ -1017,16 +1189,25 @@ const bulkUploadStudents = async (
                                     name:
                                         row.name,
 
-                                    classId,
-
                                     active:
                                         row.active === true,
+
                                 },
+
+                                $setOnInsert: {
+
+                                    classId,
+
+                                },
+
                             },
 
                             upsert: true,
+
                         },
+
                     };
+
                 }
             );
 
@@ -1069,7 +1250,9 @@ const bulkUploadStudents = async (
                 unchanged:
                     result.matchedCount -
                     result.modifiedCount,
+
             },
+
         });
 
     } catch (error) {
@@ -1089,8 +1272,10 @@ const bulkUploadStudents = async (
                 success: false,
 
                 message:
-                    "Duplicate roll number detected. Please check the Excel file.",
+                    "Duplicate roll number detected for the same class. Please check the Excel file.",
+
             });
+
         }
 
 
@@ -1100,8 +1285,11 @@ const bulkUploadStudents = async (
 
             message:
                 "Server error while processing Excel file",
+
         });
+
     }
+
 };
 
 
@@ -1133,15 +1321,20 @@ const getAllStudents = async (
             if (!teacherClass) {
 
                 return res.status(403).json({
+
                     success: false,
+
                     message:
                         "You are not assigned to any class",
+
                 });
+
             }
 
 
             query.classId =
                 teacherClass._id;
+
         }
 
 
@@ -1152,7 +1345,11 @@ const getAllStudents = async (
                     "className"
                 )
                 .sort({
+
+                    classId: 1,
+
                     rollNo: 1,
+
                 });
 
 
@@ -1164,6 +1361,7 @@ const getAllStudents = async (
                 students.length,
 
             students,
+
         });
 
     } catch (error) {
@@ -1175,11 +1373,16 @@ const getAllStudents = async (
 
 
         return res.status(500).json({
+
             success: false,
+
             message:
                 "Server error",
+
         });
+
     }
+
 };
 
 
@@ -1206,10 +1409,14 @@ const getStudentById = async (
         ) {
 
             return res.status(400).json({
+
                 success: false,
+
                 message:
                     "Invalid student ID",
+
             });
+
         }
 
 
@@ -1224,10 +1431,14 @@ const getStudentById = async (
         if (!student) {
 
             return res.status(404).json({
+
                 success: false,
+
                 message:
                     "Student not found",
+
             });
+
         }
 
 
@@ -1244,10 +1455,14 @@ const getStudentById = async (
             if (!teacherClass) {
 
                 return res.status(403).json({
+
                     success: false,
+
                     message:
                         "You are not assigned to any class",
+
                 });
+
             }
 
 
@@ -1259,11 +1474,16 @@ const getStudentById = async (
             ) {
 
                 return res.status(403).json({
+
                     success: false,
+
                     message:
                         "You can only access students from your assigned class",
+
                 });
+
             }
+
         }
 
 
@@ -1272,6 +1492,7 @@ const getStudentById = async (
             success: true,
 
             student,
+
         });
 
     } catch (error) {
@@ -1283,11 +1504,16 @@ const getStudentById = async (
 
 
         return res.status(500).json({
+
             success: false,
+
             message:
                 "Server error",
+
         });
+
     }
+
 };
 
 
@@ -1326,10 +1552,14 @@ const updateStudent = async (
         ) {
 
             return res.status(400).json({
+
                 success: false,
+
                 message:
                     "Invalid student ID",
+
             });
+
         }
 
 
@@ -1344,10 +1574,14 @@ const updateStudent = async (
         if (!student) {
 
             return res.status(404).json({
+
                 success: false,
+
                 message:
                     "Student not found",
+
             });
+
         }
 
 
@@ -1371,10 +1605,14 @@ const updateStudent = async (
             if (!teacherClass) {
 
                 return res.status(403).json({
+
                     success: false,
+
                     message:
                         "You are not assigned to any class",
+
                 });
+
             }
 
 
@@ -1386,11 +1624,16 @@ const updateStudent = async (
             ) {
 
                 return res.status(403).json({
+
                     success: false,
+
                     message:
                         "You can only edit students from your assigned class",
+
                 });
+
             }
+
         }
 
 
@@ -1406,10 +1649,14 @@ const updateStudent = async (
         ) {
 
             return res.status(400).json({
+
                 success: false,
+
                 message:
                     "No fields provided for update",
+
             });
+
         }
 
 
@@ -1428,15 +1675,37 @@ const updateStudent = async (
             if (!normalizedRollNo) {
 
                 return res.status(400).json({
+
                     success: false,
+
                     message:
                         "Roll number cannot be empty",
+
                 });
+
             }
+
+
+            // ==========================================
+            // CHECK AGAINST TARGET CLASS
+            //
+            // If classId is being changed, check the
+            // new class.
+            //
+            // Otherwise check the current class.
+            // ==========================================
+
+            const targetClassId =
+                classId !== undefined
+                    ? classId
+                    : student.classId;
 
 
             const existingStudent =
                 await Student.findOne({
+
+                    classId:
+                        targetClassId,
 
                     rollNo:
                         normalizedRollNo,
@@ -1444,21 +1713,27 @@ const updateStudent = async (
                     _id: {
                         $ne: id,
                     },
+
                 });
 
 
             if (existingStudent) {
 
                 return res.status(400).json({
+
                     success: false,
+
                     message:
-                        "A student with this roll number already exists",
+                        `Roll number "${normalizedRollNo}" already exists in this class`,
+
                 });
+
             }
 
 
             student.rollNo =
                 normalizedRollNo;
+
         }
 
 
@@ -1477,15 +1752,20 @@ const updateStudent = async (
             if (!normalizedName) {
 
                 return res.status(400).json({
+
                     success: false,
+
                     message:
                         "Name cannot be empty",
+
                 });
+
             }
 
 
             student.name =
                 normalizedName;
+
         }
 
 
@@ -1500,10 +1780,14 @@ const updateStudent = async (
             if (!classId) {
 
                 return res.status(400).json({
+
                     success: false,
+
                     message:
                         "Class ID is required",
+
                 });
+
             }
 
 
@@ -1514,10 +1798,14 @@ const updateStudent = async (
             ) {
 
                 return res.status(400).json({
+
                     success: false,
+
                     message:
                         "Invalid class ID",
+
                 });
+
             }
 
 
@@ -1530,10 +1818,14 @@ const updateStudent = async (
             if (!classData) {
 
                 return res.status(404).json({
+
                     success: false,
+
                     message:
                         "Class not found",
+
                 });
+
             }
 
 
@@ -1553,16 +1845,22 @@ const updateStudent = async (
                 ) {
 
                     return res.status(403).json({
+
                         success: false,
+
                         message:
                             "Teachers cannot move students to another class",
+
                     });
+
                 }
+
             }
 
 
             student.classId =
                 classId;
+
         }
 
 
@@ -1585,15 +1883,20 @@ const updateStudent = async (
             ) {
 
                 return res.status(400).json({
+
                     success: false,
+
                     message:
                         "Active must be true or false",
+
                 });
+
             }
 
 
             student.active =
                 normalizedActive.value;
+
         }
 
 
@@ -1605,11 +1908,7 @@ const updateStudent = async (
 
 
         // ==========================================
-        // RE-FETCH FROM DATABASE
-        // ==========================================
-        //
-        // This guarantees that the response contains
-        // the actual value stored in MongoDB.
+        // RE-FETCH
         // ==========================================
 
         const updatedStudent =
@@ -1623,16 +1922,21 @@ const updateStudent = async (
         if (!updatedStudent) {
 
             return res.status(404).json({
+
                 success: false,
+
                 message:
                     "Student not found after update",
+
             });
+
         }
 
 
         console.log(
             "Student updated:",
             {
+
                 id:
                     updatedStudent._id,
 
@@ -1647,13 +1951,10 @@ const updateStudent = async (
 
                 classId:
                     updatedStudent.classId?._id,
+
             }
         );
 
-
-        // ==========================================
-        // RESPONSE
-        // ==========================================
 
         return res.status(200).json({
 
@@ -1678,7 +1979,9 @@ const updateStudent = async (
 
                 active:
                     updatedStudent.active === true,
+
             },
+
         });
 
     } catch (error) {
@@ -1694,19 +1997,28 @@ const updateStudent = async (
         ) {
 
             return res.status(400).json({
+
                 success: false,
+
                 message:
-                    "A student with this roll number already exists",
+                    "This roll number already exists in the selected class",
+
             });
+
         }
 
 
         return res.status(500).json({
+
             success: false,
+
             message:
                 "Server error",
+
         });
+
     }
+
 };
 
 
@@ -1726,10 +2038,6 @@ const deleteStudent = async (
             req.params;
 
 
-        // ==========================================
-        // VALIDATE ID
-        // ==========================================
-
         if (
             !mongoose.Types.ObjectId.isValid(
                 id
@@ -1737,16 +2045,16 @@ const deleteStudent = async (
         ) {
 
             return res.status(400).json({
+
                 success: false,
+
                 message:
                     "Invalid student ID",
+
             });
+
         }
 
-
-        // ==========================================
-        // FIND STUDENT
-        // ==========================================
 
         const student =
             await Student.findById(id);
@@ -1755,10 +2063,14 @@ const deleteStudent = async (
         if (!student) {
 
             return res.status(404).json({
+
                 success: false,
+
                 message:
                     "Student not found",
+
             });
+
         }
 
 
@@ -1779,10 +2091,14 @@ const deleteStudent = async (
             if (!teacherClass) {
 
                 return res.status(403).json({
+
                     success: false,
+
                     message:
                         "You are not assigned to any class",
+
                 });
+
             }
 
 
@@ -1794,11 +2110,16 @@ const deleteStudent = async (
             ) {
 
                 return res.status(403).json({
+
                     success: false,
+
                     message:
                         "You can only delete students from your assigned class",
+
                 });
+
             }
+
         }
 
 
@@ -1815,6 +2136,7 @@ const deleteStudent = async (
 
             message:
                 "Student deleted successfully",
+
         });
 
     } catch (error) {
@@ -1826,11 +2148,16 @@ const deleteStudent = async (
 
 
         return res.status(500).json({
+
             success: false,
+
             message:
                 "Server error",
+
         });
+
     }
+
 };
 
 
@@ -1851,4 +2178,5 @@ module.exports = {
     updateStudent,
 
     deleteStudent,
+
 };
