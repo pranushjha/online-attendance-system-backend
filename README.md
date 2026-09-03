@@ -2,62 +2,93 @@
 
 Backend API for the **Online Attendance System**, built with Node.js, Express.js, MongoDB, Mongoose, and JWT authentication.
 
-## 🚀 Live Deployment
+The backend provides authentication, user management, class management, student management, attendance tracking, dashboards, and reporting APIs.
 
-**Live Backend API:**  
+---
+
+## 🌐 Live Deployment
+
+**Live Backend:**  
 https://online-attendance-system-yctb.onrender.com
 
-**Production API Base URL:**  
+**Production API:**  
 https://online-attendance-system-yctb.onrender.com/api
 
-**Deployment Platform:** Render
+**Backend Repository:**  
+https://github.com/pranushjha/online-attendance-system
 
-## Features
+**Frontend Repository:**  
+https://github.com/pranushjha/online-attendence-system-frontend
 
-- Admin and teacher authentication
+---
+
+## ✨ Features
+
+- Admin authentication
+- Teacher authentication
 - JWT-based authentication
-- Role-based access control
 - Protected API routes
+- Role-based authorization
 - Teacher management
 - Class management
 - Student management
 - Attendance management
-- Attendance history
 - Attendance reports
 - Dashboard statistics
 - MongoDB database integration
+- Mongoose data modeling
 - CORS support
 - Environment-based configuration
 
-## Tech Stack
+---
 
-- **Node.js** - JavaScript runtime
-- **Express.js** - Backend web framework
-- **MongoDB** - Database
-- **Mongoose** - MongoDB object modeling
-- **JSON Web Token (JWT)** - Authentication
-- **bcryptjs** - Password hashing
-- **dotenv** - Environment configuration
-- **CORS** - Cross-origin resource sharing
-- **Nodemon** - Development server
+## 🛠️ Tech Stack
 
-## Project Structure
+| Technology | Purpose |
+|------------|---------|
+| Node.js | Backend runtime |
+| Express.js | REST API framework |
+| MongoDB | Database |
+| Mongoose | MongoDB ODM |
+| JWT | Authentication |
+| bcryptjs | Password hashing |
+| dotenv | Environment variables |
+| CORS | Cross-origin API access |
+
+---
+
+## 📁 Project Structure
 
 ```text
 backend/
+│
 ├── config/
+│   └── database configuration
+│
 ├── controllers/
+│   ├── authentication
+│   ├── attendance
+│   ├── class
+│   ├── student
+│   └── teacher
+│
 ├── middleware/
+│   └── authMiddleware.js
+│
 ├── models/
-│   ├── Admin.js
-│   ├── Attendance.js
-│   ├── Class.js
-│   ├── Student.js
-│   └── teacher.js
+│   ├── teacher.js
+│   ├── student.js
+│   ├── class.js
+│   └── attendance.js
+│
 ├── routes/
-├── utils/
-├── server.js
+│   ├── auth
+│   ├── attendance
+│   ├── class
+│   ├── student
+│   └── teacher
+│
+├── .env
 ├── package.json
-├── package-lock.json
-├── .env.example
+├── server.js
 └── README.md
