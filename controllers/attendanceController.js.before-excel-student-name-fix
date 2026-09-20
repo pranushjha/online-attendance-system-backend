@@ -1,4 +1,4 @@
-const Attendance = require("../models/Attendance");
+﻿const Attendance = require("../models/Attendance");
 const Class = require("../models/Class");
 const Student = require("../models/Student");
 const mongoose = require("mongoose");
@@ -2087,11 +2087,6 @@ const exportAttendance =
                                 RollNo:
                                     record.studentId
                                         ?.rollNo ||
-                                    "",
-
-                                "Student Name":
-                                    record.studentId
-                                        ?.name ||
                                     "",
 
                                 Student:

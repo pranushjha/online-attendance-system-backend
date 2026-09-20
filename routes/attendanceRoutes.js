@@ -1,4 +1,4 @@
-const express = require("express");
+﻿const express = require("express");
 
 const router = express.Router();
 
@@ -69,6 +69,20 @@ router.get(
 
 
 // ==========================================
+
+// ==========================================
+// EXPORT ATTENDANCE BY DATE RANGE
+// GET /api/attendance/export?fromDate=YYYY-MM-DD&toDate=YYYY-MM-DD
+// ADMIN + TEACHER
+// ==========================================
+
+router.get(
+    "/export",
+    authMiddleware,
+    roleMiddleware("admin", "teacher"),
+    attendanceController.exportAttendance
+);
+
 // GET ATTENDANCE BY ID
 // GET /api/attendance/:id
 // ADMIN + TEACHER
