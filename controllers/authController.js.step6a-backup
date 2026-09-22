@@ -409,7 +409,6 @@ const adminLogin = async (req, res) => {
 // ==========================================
 
 const teacherLogin = async (req, res) => {
-
     try {
 
         const {
@@ -433,8 +432,7 @@ const teacherLogin = async (req, res) => {
                 email: normalizedEmail,
             });
 
-
-    if (!teacher) {
+        if (!teacher) {
             return res.status(401).json({
                 success: false,
                 message:
@@ -448,6 +446,15 @@ const teacherLogin = async (req, res) => {
                 message:
                     "Please verify your email before logging in",
                 emailVerified: false,
+            });
+        }
+
+        if (!teacher.passwordSet) {
+            return res.status(403).json({
+                success: false,
+                message:
+                    "Please set your password using the invitation email",
+                passwordSet: false,
             });
         }
 
@@ -510,13 +517,14 @@ const teacherLogin = async (req, res) => {
 
 // ==========================================
 // VERIFY EMAIL
-// ADMIN OR TEACHER
 // ==========================================
 
 const verifyEmail = async (req, res) => {
     try {
 
-        const { token } = req.query;
+        const {
+            token,
+        } = req.query;
 
         if (!token) {
             return res.status(400).json({
@@ -529,80 +537,66 @@ const verifyEmail = async (req, res) => {
         const tokenHash =
             hashToken(token);
 
-        const now = new Date();
-
-        // Try admin first
-        const admin =
+        let user =
             await Admin.findOne({
                 emailVerificationTokenHash:
                     tokenHash,
-                emailVerificationExpires: {
-                    $gt: now,
-                },
             });
 
-        if (admin) {
+        let role = "admin";
 
-            admin.isEmailVerified =
-                true;
+        if (!user) {
 
-            admin.emailVerificationTokenHash =
-                null;
+            user =
+                await Teacher.findOne({
+                    emailVerificationTokenHash:
+                        tokenHash,
+                });
 
-            admin.emailVerificationExpires =
-                null;
+            role = "teacher";
+        }
 
-            await admin.save();
-
-            return res.status(200).json({
-                success: true,
-                role: "admin",
+        if (!user) {
+            return res.status(400).json({
+                success: false,
                 message:
-                    "Email verified successfully. You can now log in.",
+                    "Invalid or expired verification link",
             });
         }
 
-        // Try teacher
-        const teacher =
-            await Teacher.findOne({
-                emailVerificationTokenHash:
-                    tokenHash,
-                emailVerificationExpires: {
-                    $gt: now,
-                },
-            });
+        if (
+            !user.emailVerificationExpires ||
+            user.emailVerificationExpires <
+                new Date()
+        ) {
 
-        if (teacher) {
-
-            teacher.isEmailVerified =
-                true;
-
-            teacher.emailVerificationTokenHash =
-                null;
-
-            teacher.emailVerificationExpires =
-                null;
-
-            await teacher.save();
-
-            return res.status(200).json({
-                success: true,
-                role: "teacher",
+            return res.status(400).json({
+                success: false,
                 message:
-                    "Email verified successfully. You can now log in.",
+                    "Verification link has expired",
             });
         }
 
-        return res.status(400).json({
-            success: false,
+        user.isEmailVerified = true;
+
+        user.emailVerificationTokenHash = null;
+        user.emailVerificationExpires = null;
+
+        await user.save();
+
+        return res.status(200).json({
+            success: true,
             message:
-                "Invalid or expired verification link",
+                role === "teacher"
+                    ? "Email verified successfully. You can now set your password."
+                    : "Email verified successfully. You can now log in.",
+            role,
         });
 
     } catch (error) {
 
         console.error(
-            "Verify Email Error:",
+            "VERIFY EMAIL ERROR:",
             error
         );
 
@@ -615,9 +609,6 @@ const verifyEmail = async (req, res) => {
 };
 
 
-// ==========================================
-// SET TEACHER PASSWORD
-// ==========================================
 // ==========================================
 // SET TEACHER PASSWORD
 // ==========================================
@@ -655,8 +646,7 @@ const setTeacherPassword = async (req, res) => {
                     tokenHash,
             });
 
-
-    if (!teacher) {
+        if (!teacher) {
             return res.status(400).json({
                 success: false,
                 message:
@@ -1088,6 +1078,3 @@ module.exports = {
     resetPassword,
     resendVerification,
 };
-
-
-

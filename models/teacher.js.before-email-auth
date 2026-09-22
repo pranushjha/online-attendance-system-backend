@@ -1,4 +1,4 @@
-﻿const mongoose = require("mongoose");
+const mongoose = require("mongoose");
 
 const teacherSchema = new mongoose.Schema(
     {
@@ -33,11 +33,6 @@ const teacherSchema = new mongoose.Schema(
             required: true,
         },
 
-        passwordSet: {
-            type: Boolean,
-            default: false,
-        },
-
         // ==========================================
         // ASSIGNED CLASS
         // ==========================================
@@ -56,39 +51,6 @@ const teacherSchema = new mongoose.Schema(
             type: String,
             enum: ["teacher"],
             default: "teacher",
-        },
-
-        // ==========================================
-        // EMAIL VERIFICATION
-        // ==========================================
-
-        isEmailVerified: {
-            type: Boolean,
-            default: false,
-        },
-
-        emailVerificationTokenHash: {
-            type: String,
-            default: null,
-        },
-
-        emailVerificationExpires: {
-            type: Date,
-            default: null,
-        },
-
-        // ==========================================
-        // PASSWORD RESET
-        // ==========================================
-
-        passwordResetTokenHash: {
-            type: String,
-            default: null,
-        },
-
-        passwordResetExpires: {
-            type: Date,
-            default: null,
         },
     },
     {

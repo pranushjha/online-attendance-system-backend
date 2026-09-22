@@ -1,4 +1,4 @@
-const mongoose = require("mongoose");
+﻿const mongoose = require("mongoose");
 
 const adminSchema = new mongoose.Schema(
   {
@@ -25,6 +25,39 @@ const adminSchema = new mongoose.Schema(
       type: String,
       enum: ["admin"],
       default: "admin",
+    },
+
+    // ==========================================
+    // EMAIL VERIFICATION
+    // ==========================================
+
+    isEmailVerified: {
+      type: Boolean,
+      default: false,
+    },
+
+    emailVerificationTokenHash: {
+      type: String,
+      default: null,
+    },
+
+    emailVerificationExpires: {
+      type: Date,
+      default: null,
+    },
+
+    // ==========================================
+    // PASSWORD RESET
+    // ==========================================
+
+    passwordResetTokenHash: {
+      type: String,
+      default: null,
+    },
+
+    passwordResetExpires: {
+      type: Date,
+      default: null,
     },
   },
   {

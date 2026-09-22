@@ -450,6 +450,8 @@ const teacherLogin = async (req, res) => {
                 emailVerified: false,
             });
         }
+);
+        }
 
         const passwordMatch =
             await bcrypt.compare(

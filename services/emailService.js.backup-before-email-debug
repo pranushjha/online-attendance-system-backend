@@ -1,0 +1,264 @@
+﻿const nodemailer = require("nodemailer");
+
+const transporter = nodemailer.createTransport({
+    service: process.env.EMAIL_SERVICE || "gmail",
+
+    auth: {
+        user: process.env.EMAIL_USER,
+        pass: process.env.EMAIL_APP_PASSWORD,
+    },
+});
+
+const FRONTEND_URL =
+    process.env.FRONTEND_URL || "http://localhost:5173";
+
+const TOKEN_HOURS =
+    Number(process.env.EMAIL_TOKEN_EXPIRES_HOURS) || 24;
+
+
+// ==========================================
+// VERIFY SMTP CONNECTION
+// ==========================================
+
+const verifyEmailTransport = async () => {
+    try {
+        await transporter.verify();
+
+        console.log("Email SMTP connection verified successfully.");
+
+        return true;
+    } catch (error) {
+        console.error("Email SMTP verification failed:");
+        console.error(error.message);
+
+        return false;
+    }
+};
+
+
+// ==========================================
+// SEND EMAIL VERIFICATION
+// ==========================================
+
+const sendVerificationEmail = async ({
+    name,
+    email,
+    token,
+}) => {
+
+    const verificationUrl =
+        `${FRONTEND_URL}/verify-email?token=${encodeURIComponent(token)}`;
+
+    const mailOptions = {
+        from: `"Online Attendance System" <${process.env.EMAIL_USER}>`,
+        to: email,
+
+        subject: "Verify your Online Attendance System account",
+
+        html: `
+            <div style="font-family: Arial, sans-serif; max-width: 600px; margin: auto;">
+
+                <h2>Email Verification</h2>
+
+                <p>Hello ${name},</p>
+
+                <p>
+                    Please verify your email address to activate your
+                    Online Attendance System account.
+                </p>
+
+                <p>
+                    <a
+                        href="${verificationUrl}"
+                        style="
+                            display:inline-block;
+                            padding:12px 20px;
+                            background:#2563eb;
+                            color:white;
+                            text-decoration:none;
+                            border-radius:6px;
+                        "
+                    >
+                        Verify Email
+                    </a>
+                </p>
+
+                <p>
+                    This verification link will expire in
+                    <strong>${TOKEN_HOURS} hours</strong>.
+                </p>
+
+                <p>
+                    If you did not request this account, you can ignore
+                    this email.
+                </p>
+
+                <hr>
+
+                <p style="color:#666;font-size:12px;">
+                    Online Attendance System
+                </p>
+
+            </div>
+        `,
+    };
+
+    return transporter.sendMail(mailOptions);
+};
+
+
+// ==========================================
+// SEND TEACHER INVITATION
+// ==========================================
+
+const sendTeacherInvitationEmail = async ({
+    name,
+    email,
+    token,
+}) => {
+
+    const invitationUrl =
+        `${FRONTEND_URL}/set-password?token=${encodeURIComponent(token)}`;
+
+    const mailOptions = {
+        from: `"Online Attendance System" <${process.env.EMAIL_USER}>`,
+        to: email,
+
+        subject: "Teacher account invitation - Online Attendance System",
+
+        html: `
+            <div style="font-family: Arial, sans-serif; max-width: 600px; margin: auto;">
+
+                <h2>Teacher Account Invitation</h2>
+
+                <p>Hello ${name},</p>
+
+                <p>
+                    You have been invited to join the
+                    <strong>Online Attendance System</strong>.
+                </p>
+
+                <p>
+                    Click the button below to create your password
+                    and activate your teacher account.
+                </p>
+
+                <p>
+                    <a
+                        href="${invitationUrl}"
+                        style="
+                            display:inline-block;
+                            padding:12px 20px;
+                            background:#2563eb;
+                            color:white;
+                            text-decoration:none;
+                            border-radius:6px;
+                        "
+                    >
+                        Set Password & Activate Account
+                    </a>
+                </p>
+
+                <p>
+                    This invitation will expire in
+                    <strong>${TOKEN_HOURS} hours</strong>.
+                </p>
+
+                <p>
+                    If you were not expecting this invitation,
+                    you can ignore this email.
+                </p>
+
+                <hr>
+
+                <p style="color:#666;font-size:12px;">
+                    Online Attendance System
+                </p>
+
+            </div>
+        `,
+    };
+
+    return transporter.sendMail(mailOptions);
+};
+
+
+// ==========================================
+// SEND PASSWORD RESET EMAIL
+// ==========================================
+
+const sendPasswordResetEmail = async ({
+    name,
+    email,
+    token,
+}) => {
+
+    const resetUrl =
+        `${FRONTEND_URL}/reset-password?token=${encodeURIComponent(token)}`;
+
+    const mailOptions = {
+        from: `"Online Attendance System" <${process.env.EMAIL_USER}>`,
+        to: email,
+
+        subject: "Reset your Online Attendance System password",
+
+        html: `
+            <div style="font-family: Arial, sans-serif; max-width: 600px; margin: auto;">
+
+                <h2>Password Reset</h2>
+
+                <p>Hello ${name},</p>
+
+                <p>
+                    A password reset was requested for your
+                    Online Attendance System account.
+                </p>
+
+                <p>
+                    <a
+                        href="${resetUrl}"
+                        style="
+                            display:inline-block;
+                            padding:12px 20px;
+                            background:#2563eb;
+                            color:white;
+                            text-decoration:none;
+                            border-radius:6px;
+                        "
+                    >
+                        Reset Password
+                    </a>
+                </p>
+
+                <p>
+                    This link will expire in
+                    <strong>${TOKEN_HOURS} hours</strong>.
+                </p>
+
+                <p>
+                    If you did not request a password reset,
+                    you can safely ignore this email.
+                </p>
+
+                <hr>
+
+                <p style="color:#666;font-size:12px;">
+                    Online Attendance System
+                </p>
+
+            </div>
+        `,
+    };
+
+    return transporter.sendMail(mailOptions);
+};
+
+
+module.exports = {
+    transporter,
+    verifyEmailTransport,
+    sendVerificationEmail,
+    sendTeacherInvitationEmail,
+    sendPasswordResetEmail,
+};
+
