@@ -1,0 +1,1532 @@
+const bcrypt = require("bcryptjs");
+const jwt = require("jsonwebtoken");
+const crypto = require("crypto");
+
+const Admin = require("../models/Admin");
+const Teacher = require("../models/teacher");
+
+const {
+    sendVerificationEmail,
+    sendTeacherInvitationEmail,
+    sendPasswordResetEmail,
+} = require("../services/emailService");
+
+
+// ==========================================
+// TOKEN GENERATOR
+// ==========================================
+
+const generateToken = (userId, role) => {
+    return jwt.sign(
+        {
+            id: userId,
+            role: role,
+        },
+        process.env.JWT_SECRET,
+        {
+            expiresIn: "7d",
+        }
+    );
+};
+
+
+// ==========================================
+// EMAIL TOKEN HELPERS
+// ==========================================
+
+const getTokenExpiry = () => {
+    const hours =
+        Number(process.env.EMAIL_TOKEN_EXPIRES_HOURS) || 24;
+
+    return new Date(
+        Date.now() + hours * 60 * 60 * 1000
+    );
+};
+
+
+const createRawToken = () => {
+    return crypto.randomBytes(32).toString("hex");
+};
+
+
+const hashToken = (token) => {
+    return crypto
+        .createHash("sha256")
+        .update(token)
+        .digest("hex");
+};
+
+
+// ==========================================
+// CREATE ADMIN
+// ==========================================
+
+const createAdmin = async (req, res) => {
+    try {
+
+        const {
+            name,
+            email,
+            password,
+        } = req.body;
+
+        if (!name || !email || !password) {
+            return res.status(400).json({
+                success: false,
+                message: "Name, email and password are required",
+            });
+        }
+
+        const normalizedEmail =
+            email.trim().toLowerCase();
+
+        const existingAdmin =
+            await Admin.findOne({
+                email: normalizedEmail,
+            });
+
+        if (existingAdmin) {
+            return res.status(409).json({
+                success: false,
+                message: "Admin with this email already exists",
+            });
+        }
+
+        const hashedPassword =
+            await bcrypt.hash(password, 10);
+
+        const verificationToken =
+            createRawToken();
+
+        const admin =
+            await Admin.create({
+                name: name.trim(),
+                email: normalizedEmail,
+                password: hashedPassword,
+                role: "admin",
+
+                isEmailVerified: false,
+
+                emailVerificationTokenHash:
+                    hashToken(verificationToken),
+
+                emailVerificationExpires:
+                    getTokenExpiry(),
+            });
+
+        try {
+
+            await sendVerificationEmail({
+                name: admin.name,
+                email: admin.email,
+                token: verificationToken,
+            });
+
+        } catch (emailError) {
+
+            await Admin.findByIdAndDelete(admin._id);
+
+            console.error(
+                "Admin verification email failed:",
+                emailError.message
+            );
+
+            return res.status(500).json({
+                success: false,
+                message:
+                    "Admin account could not be created because the verification email could not be sent",
+            });
+        }
+
+        return res.status(201).json({
+            success: true,
+            message:
+                "Admin created successfully. Verification email sent.",
+            admin: {
+                _id: admin._id,
+                name: admin.name,
+                email: admin.email,
+                role: admin.role,
+                isEmailVerified:
+                    admin.isEmailVerified,
+            },
+        });
+
+    } catch (error) {
+
+        console.error(
+            "CREATE ADMIN ERROR:",
+            error
+        );
+
+        return res.status(500).json({
+            success: false,
+            message: "Server error while creating admin",
+        });
+    }
+};
+
+
+// ==========================================
+// CREATE TEACHER
+// ==========================================
+
+const createTeacher = async (req, res) => {
+    try {
+
+        const {
+            name,
+            email,
+            assignedClass,
+        } = req.body;
+
+        if (!name || !email) {
+            return res.status(400).json({
+                success: false,
+                message: "Name and email are required",
+            });
+        }
+
+        const normalizedEmail =
+            email.trim().toLowerCase();
+
+        const existingTeacher =
+            await Teacher.findOne({
+                email: normalizedEmail,
+            });
+
+        if (existingTeacher) {
+            return res.status(409).json({
+                success: false,
+                message:
+                    "Teacher with this email already exists",
+            });
+        }
+
+        /*
+         * Teacher does not choose a password here.
+         *
+         * A random password hash is created only because
+         * the current schema requires a password field.
+         *
+         * The teacher will create the real password through
+         * the invitation link.
+         */
+
+        const temporaryPassword =
+            crypto.randomBytes(48).toString("hex");
+
+        const temporaryPasswordHash =
+            await bcrypt.hash(
+                temporaryPassword,
+                10
+            );
+
+        const invitationToken =
+            createRawToken();
+
+        const teacher =
+            await Teacher.create({
+                name: name.trim(),
+                email: normalizedEmail,
+                password: temporaryPasswordHash,
+
+                passwordSet: false,
+
+                assignedClass:
+                    assignedClass || null,
+
+                role: "teacher",
+
+                isEmailVerified: false,
+
+                emailVerificationTokenHash:
+                    hashToken(invitationToken),
+
+                emailVerificationExpires:
+                    getTokenExpiry(),
+            });
+
+        try {
+
+            await sendTeacherInvitationEmail({
+                name: teacher.name,
+                email: teacher.email,
+                token: invitationToken,
+            });
+
+        } catch (emailError) {
+
+            await Teacher.findByIdAndDelete(
+                teacher._id
+            );
+
+            console.error(
+                "Teacher invitation email failed:",
+                emailError.message
+            );
+
+            return res.status(500).json({
+                success: false,
+                message:
+                    "Teacher account could not be created because the invitation email could not be sent",
+            });
+        }
+
+        return res.status(201).json({
+            success: true,
+            message:
+                "Teacher created successfully. Invitation email sent.",
+            teacher: {
+                _id: teacher._id,
+                name: teacher.name,
+                email: teacher.email,
+                assignedClass:
+                    teacher.assignedClass,
+                role: teacher.role,
+                passwordSet:
+                    teacher.passwordSet,
+                isEmailVerified:
+                    teacher.isEmailVerified,
+            },
+        });
+
+    } catch (error) {
+
+        console.error(
+            "CREATE TEACHER ERROR:",
+            error
+        );
+
+        return res.status(500).json({
+            success: false,
+            message:
+                "Server error while creating teacher",
+        });
+    }
+};
+
+
+// ==========================================
+// ADMIN LOGIN
+// ==========================================
+
+const adminLogin = async (req, res) => {
+    try {
+
+        const {
+            email,
+            password,
+        } = req.body;
+
+        if (!email || !password) {
+            return res.status(400).json({
+                success: false,
+                message:
+                    "Email and password are required",
+            });
+        }
+
+        const normalizedEmail =
+            email.trim().toLowerCase();
+
+        const admin =
+            await Admin.findOne({
+                email: normalizedEmail,
+            });
+
+        if (!admin) {
+            return res.status(401).json({
+                success: false,
+                message:
+                    "Invalid email or password",
+            });
+        }
+
+        if (!admin.isEmailVerified) {
+            return res.status(403).json({
+                success: false,
+                message:
+                    "Please verify your email before logging in",
+                emailVerified: false,
+            });
+        }
+
+        const passwordMatch =
+            await bcrypt.compare(
+                password,
+                admin.password
+            );
+
+        if (!passwordMatch) {
+            return res.status(401).json({
+                success: false,
+                message:
+                    "Invalid email or password",
+            });
+        }
+
+        const token =
+            generateToken(
+                admin._id,
+                "admin"
+            );
+
+        return res.status(200).json({
+            success: true,
+            message: "Admin login successful",
+
+            token,
+
+            user: {
+                _id: admin._id,
+                name: admin.name,
+                email: admin.email,
+                role: admin.role,
+                isEmailVerified:
+                    admin.isEmailVerified,
+            },
+        });
+
+    } catch (error) {
+
+        console.error(
+            "ADMIN LOGIN ERROR:",
+            error
+        );
+
+        return res.status(500).json({
+            success: false,
+            message:
+                "Server error during admin login",
+        });
+    }
+};
+
+
+// ==========================================
+// TEACHER LOGIN
+// ==========================================
+
+const teacherLogin = async (req, res) => {
+    try {
+        const { name, password } = req.body;
+
+        // Check required fields
+        if (!name || !password) {
+            return res.status(400).json({
+                success: false,
+                message: "Teacher name and password are required",
+            });
+        }
+
+        const normalizedName = name.trim();
+
+        // Find teacher by name, case-insensitive
+        const escapedName = normalizedName.replace(
+            /[.*+?^${}()|[\]\\]/g,
+            "\\$&"
+        );
+
+        const teacher = await Teacher.findOne({
+            name: {
+                $regex: `^${escapedName}$`,
+                $options: "i",
+            },
+        });
+
+        if (!teacher) {
+            return res.status(401).json({
+                success: false,
+                message: "Invalid teacher name or password",
+            });
+        }
+
+        // Compare password
+        const isPasswordCorrect = await bcrypt.compare(
+            password,
+            teacher.password
+        );
+
+        if (!isPasswordCorrect) {
+            return res.status(401).json({
+                success: false,
+                message: "Invalid teacher name or password",
+            });
+        }
+
+        // Generate JWT
+        const token = generateToken(teacher._id, "teacher");
+
+        // Login response
+        res.status(200).json({
+            success: true,
+            message: "Teacher login successful",
+
+            token,
+
+            user: {
+                _id: teacher._id,
+                name: teacher.name,
+                email: teacher.email,
+                assignedClass: teacher.assignedClass,
+                role: "teacher",
+            },
+        });
+
+    } catch (error) {
+        console.error("Teacher Login Error:", error);
+
+        res.status(500).json({
+            success: false,
+            message: "Server error",
+        });
+    }
+};")}const bcrypt = require("bcryptjs");
+const jwt = require("jsonwebtoken");
+const crypto = require("crypto");
+
+const Admin = require("../models/Admin");
+const Teacher = require("../models/teacher");
+
+const {
+    sendVerificationEmail,
+    sendTeacherInvitationEmail,
+    sendPasswordResetEmail,
+} = require("../services/emailService");
+
+
+// ==========================================
+// TOKEN GENERATOR
+// ==========================================
+
+const generateToken = (userId, role) => {
+    return jwt.sign(
+        {
+            id: userId,
+            role: role,
+        },
+        process.env.JWT_SECRET,
+        {
+            expiresIn: "7d",
+        }
+    );
+};
+
+
+// ==========================================
+// EMAIL TOKEN HELPERS
+// ==========================================
+
+const getTokenExpiry = () => {
+    const hours =
+        Number(process.env.EMAIL_TOKEN_EXPIRES_HOURS) || 24;
+
+    return new Date(
+        Date.now() + hours * 60 * 60 * 1000
+    );
+};
+
+
+const createRawToken = () => {
+    return crypto.randomBytes(32).toString("hex");
+};
+
+
+const hashToken = (token) => {
+    return crypto
+        .createHash("sha256")
+        .update(token)
+        .digest("hex");
+};
+
+
+// ==========================================
+// CREATE ADMIN
+// ==========================================
+
+const createAdmin = async (req, res) => {
+    try {
+
+        const {
+            name,
+            email,
+            password,
+        } = req.body;
+
+        if (!name || !email || !password) {
+            return res.status(400).json({
+                success: false,
+                message: "Name, email and password are required",
+            });
+        }
+
+        const normalizedEmail =
+            email.trim().toLowerCase();
+
+        const existingAdmin =
+            await Admin.findOne({
+                email: normalizedEmail,
+            });
+
+        if (existingAdmin) {
+            return res.status(409).json({
+                success: false,
+                message: "Admin with this email already exists",
+            });
+        }
+
+        const hashedPassword =
+            await bcrypt.hash(password, 10);
+
+        const verificationToken =
+            createRawToken();
+
+        const admin =
+            await Admin.create({
+                name: name.trim(),
+                email: normalizedEmail,
+                password: hashedPassword,
+                role: "admin",
+
+                isEmailVerified: false,
+
+                emailVerificationTokenHash:
+                    hashToken(verificationToken),
+
+                emailVerificationExpires:
+                    getTokenExpiry(),
+            });
+
+        try {
+
+            await sendVerificationEmail({
+                name: admin.name,
+                email: admin.email,
+                token: verificationToken,
+            });
+
+        } catch (emailError) {
+
+            await Admin.findByIdAndDelete(admin._id);
+
+            console.error(
+                "Admin verification email failed:",
+                emailError.message
+            );
+
+            return res.status(500).json({
+                success: false,
+                message:
+                    "Admin account could not be created because the verification email could not be sent",
+            });
+        }
+
+        return res.status(201).json({
+            success: true,
+            message:
+                "Admin created successfully. Verification email sent.",
+            admin: {
+                _id: admin._id,
+                name: admin.name,
+                email: admin.email,
+                role: admin.role,
+                isEmailVerified:
+                    admin.isEmailVerified,
+            },
+        });
+
+    } catch (error) {
+
+        console.error(
+            "CREATE ADMIN ERROR:",
+            error
+        );
+
+        return res.status(500).json({
+            success: false,
+            message: "Server error while creating admin",
+        });
+    }
+};
+
+
+// ==========================================
+// CREATE TEACHER
+// ==========================================
+
+const createTeacher = async (req, res) => {
+    try {
+
+        const {
+            name,
+            email,
+            assignedClass,
+        } = req.body;
+
+        if (!name || !email) {
+            return res.status(400).json({
+                success: false,
+                message: "Name and email are required",
+            });
+        }
+
+        const normalizedEmail =
+            email.trim().toLowerCase();
+
+        const existingTeacher =
+            await Teacher.findOne({
+                email: normalizedEmail,
+            });
+
+        if (existingTeacher) {
+            return res.status(409).json({
+                success: false,
+                message:
+                    "Teacher with this email already exists",
+            });
+        }
+
+        /*
+         * Teacher does not choose a password here.
+         *
+         * A random password hash is created only because
+         * the current schema requires a password field.
+         *
+         * The teacher will create the real password through
+         * the invitation link.
+         */
+
+        const temporaryPassword =
+            crypto.randomBytes(48).toString("hex");
+
+        const temporaryPasswordHash =
+            await bcrypt.hash(
+                temporaryPassword,
+                10
+            );
+
+        const invitationToken =
+            createRawToken();
+
+        const teacher =
+            await Teacher.create({
+                name: name.trim(),
+                email: normalizedEmail,
+                password: temporaryPasswordHash,
+
+                passwordSet: false,
+
+                assignedClass:
+                    assignedClass || null,
+
+                role: "teacher",
+
+                isEmailVerified: false,
+
+                emailVerificationTokenHash:
+                    hashToken(invitationToken),
+
+                emailVerificationExpires:
+                    getTokenExpiry(),
+            });
+
+        try {
+
+            await sendTeacherInvitationEmail({
+                name: teacher.name,
+                email: teacher.email,
+                token: invitationToken,
+            });
+
+        } catch (emailError) {
+
+            await Teacher.findByIdAndDelete(
+                teacher._id
+            );
+
+            console.error(
+                "Teacher invitation email failed:",
+                emailError.message
+            );
+
+            return res.status(500).json({
+                success: false,
+                message:
+                    "Teacher account could not be created because the invitation email could not be sent",
+            });
+        }
+
+        return res.status(201).json({
+            success: true,
+            message:
+                "Teacher created successfully. Invitation email sent.",
+            teacher: {
+                _id: teacher._id,
+                name: teacher.name,
+                email: teacher.email,
+                assignedClass:
+                    teacher.assignedClass,
+                role: teacher.role,
+                passwordSet:
+                    teacher.passwordSet,
+                isEmailVerified:
+                    teacher.isEmailVerified,
+            },
+        });
+
+    } catch (error) {
+
+        console.error(
+            "CREATE TEACHER ERROR:",
+            error
+        );
+
+        return res.status(500).json({
+            success: false,
+            message:
+                "Server error while creating teacher",
+        });
+    }
+};
+
+
+// ==========================================
+// ADMIN LOGIN
+// ==========================================
+
+const adminLogin = async (req, res) => {
+    try {
+
+        const {
+            email,
+            password,
+        } = req.body;
+
+        if (!email || !password) {
+            return res.status(400).json({
+                success: false,
+                message:
+                    "Email and password are required",
+            });
+        }
+
+        const normalizedEmail =
+            email.trim().toLowerCase();
+
+        const admin =
+            await Admin.findOne({
+                email: normalizedEmail,
+            });
+
+        if (!admin) {
+            return res.status(401).json({
+                success: false,
+                message:
+                    "Invalid email or password",
+            });
+        }
+
+        if (!admin.isEmailVerified) {
+            return res.status(403).json({
+                success: false,
+                message:
+                    "Please verify your email before logging in",
+                emailVerified: false,
+            });
+        }
+
+        const passwordMatch =
+            await bcrypt.compare(
+                password,
+                admin.password
+            );
+
+        if (!passwordMatch) {
+            return res.status(401).json({
+                success: false,
+                message:
+                    "Invalid email or password",
+            });
+        }
+
+        const token =
+            generateToken(
+                admin._id,
+                "admin"
+            );
+
+        return res.status(200).json({
+            success: true,
+            message: "Admin login successful",
+
+            token,
+
+            user: {
+                _id: admin._id,
+                name: admin.name,
+                email: admin.email,
+                role: admin.role,
+                isEmailVerified:
+                    admin.isEmailVerified,
+            },
+        });
+
+    } catch (error) {
+
+        console.error(
+            "ADMIN LOGIN ERROR:",
+            error
+        );
+
+        return res.status(500).json({
+            success: false,
+            message:
+                "Server error during admin login",
+        });
+    }
+};
+
+
+// ==========================================
+// TEACHER LOGIN
+// ==========================================
+
+,
+                $options: "i",
+            },
+        });
+
+        if (!teacher) {
+            return res.status(401).json({
+                success: false,
+                message: "Invalid teacher name or password",
+            });
+        }
+
+        // Compare password
+        const isPasswordCorrect = await bcrypt.compare(
+            password,
+            teacher.password
+        );
+
+        if (!isPasswordCorrect) {
+            return res.status(401).json({
+                success: false,
+                message: "Invalid teacher name or password",
+            });
+        }
+
+        // Generate JWT
+        const token = generateToken(teacher._id, "teacher");
+
+        // Login response
+        res.status(200).json({
+            success: true,
+            message: "Teacher login successful",
+
+            token,
+
+            user: {
+                _id: teacher._id,
+                name: teacher.name,
+                email: teacher.email,
+                assignedClass: teacher.assignedClass,
+                role: "teacher",
+            },
+        });
+
+    } catch (error) {
+        console.error("Teacher Login Error:", error);
+
+        res.status(500).json({
+            success: false,
+            message: "Server error",
+        });
+    }
+};
+
+
+// ==========================================
+// VERIFY EMAIL
+// ADMIN OR TEACHER
+// ==========================================
+
+const verifyEmail = async (req, res) => {
+    try {
+
+        const { token } = req.query;
+
+        if (!token) {
+            return res.status(400).json({
+                success: false,
+                message:
+                    "Verification token is required",
+            });
+        }
+
+        const tokenHash =
+            hashToken(token);
+
+        const now = new Date();
+
+        // Try admin first
+        const admin =
+            await Admin.findOne({
+                emailVerificationTokenHash:
+                    tokenHash,
+                emailVerificationExpires: {
+                    $gt: now,
+                },
+            });
+
+        if (admin) {
+
+            admin.isEmailVerified =
+                true;
+
+            admin.emailVerificationTokenHash =
+                null;
+
+            admin.emailVerificationExpires =
+                null;
+
+            await admin.save();
+
+            return res.status(200).json({
+                success: true,
+                role: "admin",
+                message:
+                    "Email verified successfully. You can now log in.",
+            });
+        }
+
+        // Try teacher
+        const teacher =
+            await Teacher.findOne({
+                emailVerificationTokenHash:
+                    tokenHash,
+                emailVerificationExpires: {
+                    $gt: now,
+                },
+            });
+
+        if (teacher) {
+
+            teacher.isEmailVerified =
+                true;
+
+            teacher.emailVerificationTokenHash =
+                null;
+
+            teacher.emailVerificationExpires =
+                null;
+
+            await teacher.save();
+
+            return res.status(200).json({
+                success: true,
+                role: "teacher",
+                message:
+                    "Email verified successfully. You can now log in.",
+            });
+        }
+
+        return res.status(400).json({
+            success: false,
+            message:
+                "Invalid or expired verification link",
+        });
+
+    } catch (error) {
+
+        console.error(
+            "Verify Email Error:",
+            error
+        );
+
+        return res.status(500).json({
+            success: false,
+            message:
+                "Server error while verifying email",
+        });
+    }
+};
+
+
+// ==========================================
+// SET TEACHER PASSWORD
+// ==========================================
+// ==========================================
+// SET TEACHER PASSWORD
+// ==========================================
+
+const setTeacherPassword = async (req, res) => {
+    try {
+
+        const {
+            token,
+            password,
+        } = req.body;
+
+        if (!token || !password) {
+            return res.status(400).json({
+                success: false,
+                message:
+                    "Token and password are required",
+            });
+        }
+
+        if (password.length < 8) {
+            return res.status(400).json({
+                success: false,
+                message:
+                    "Password must be at least 8 characters",
+            });
+        }
+
+        const tokenHash =
+            hashToken(token);
+
+        const teacher =
+            await Teacher.findOne({
+                emailVerificationTokenHash:
+                    tokenHash,
+            });
+
+
+    if (!teacher) {
+            return res.status(400).json({
+                success: false,
+                message:
+                    "Invalid or expired invitation link",
+            });
+        }
+
+        if (
+            !teacher.emailVerificationExpires ||
+            teacher.emailVerificationExpires <
+                new Date()
+        ) {
+
+            return res.status(400).json({
+                success: false,
+                message:
+                    "Invitation link has expired",
+            });
+        }
+
+        teacher.password =
+            await bcrypt.hash(
+                password,
+                10
+            );
+
+        teacher.passwordSet = true;
+        teacher.isEmailVerified = true;
+
+        teacher.emailVerificationTokenHash = null;
+        teacher.emailVerificationExpires = null;
+
+        await teacher.save();
+
+        return res.status(200).json({
+            success: true,
+            message:
+                "Password created successfully. Your teacher account is now active.",
+        });
+
+    } catch (error) {
+
+        console.error(
+            "SET TEACHER PASSWORD ERROR:",
+            error
+        );
+
+        return res.status(500).json({
+            success: false,
+            message:
+                "Server error while setting password",
+        });
+    }
+};
+
+
+// ==========================================
+// FORGOT PASSWORD
+// ==========================================
+
+const forgotPassword = async (req, res) => {
+    try {
+
+        const {
+            email,
+            role,
+        } = req.body;
+
+        if (!email || !role) {
+            return res.status(400).json({
+                success: false,
+                message:
+                    "Email and role are required",
+            });
+        }
+
+        const normalizedEmail =
+            email.trim().toLowerCase();
+
+        let user;
+
+        if (role === "admin") {
+
+            user =
+                await Admin.findOne({
+                    email: normalizedEmail,
+                });
+
+        } else if (role === "teacher") {
+
+            user =
+                await Teacher.findOne({
+                    email: normalizedEmail,
+                });
+
+        } else {
+
+            return res.status(400).json({
+                success: false,
+                message: "Invalid role",
+            });
+        }
+
+        /*
+         * Always return the same response when the account
+         * does not exist to reduce account enumeration.
+         */
+
+        if (!user) {
+            return res.status(200).json({
+                success: true,
+                message:
+                    "If an account exists with this email, a password reset link has been sent.",
+            });
+        }
+
+        const resetToken =
+            createRawToken();
+
+        user.passwordResetTokenHash =
+            hashToken(resetToken);
+
+        user.passwordResetExpires =
+            getTokenExpiry();
+
+        await user.save();
+
+        try {
+
+            await sendPasswordResetEmail({
+                name: user.name,
+                email: user.email,
+                token: resetToken,
+            });
+
+        } catch (emailError) {
+
+            user.passwordResetTokenHash = null;
+            user.passwordResetExpires = null;
+
+            await user.save();
+
+            console.error(
+                "PASSWORD RESET EMAIL ERROR:",
+                emailError.message
+            );
+        }
+
+        return res.status(200).json({
+            success: true,
+            message:
+                "If an account exists with this email, a password reset link has been sent.",
+        });
+
+    } catch (error) {
+
+        console.error(
+            "FORGOT PASSWORD ERROR:",
+            error
+        );
+
+        return res.status(500).json({
+            success: false,
+            message:
+                "Server error while requesting password reset",
+        });
+    }
+};
+
+
+// ==========================================
+// RESET PASSWORD
+// ==========================================
+
+const resetPassword = async (req, res) => {
+    try {
+
+        const {
+            token,
+            password,
+            role,
+        } = req.body;
+
+        if (!token || !password || !role) {
+            return res.status(400).json({
+                success: false,
+                message:
+                    "Token, password and role are required",
+            });
+        }
+
+        if (password.length < 8) {
+            return res.status(400).json({
+                success: false,
+                message:
+                    "Password must be at least 8 characters",
+            });
+        }
+
+        const tokenHash =
+            hashToken(token);
+
+        let user;
+
+        if (role === "admin") {
+
+            user =
+                await Admin.findOne({
+                    passwordResetTokenHash:
+                        tokenHash,
+                });
+
+        } else if (role === "teacher") {
+
+            user =
+                await Teacher.findOne({
+                    passwordResetTokenHash:
+                        tokenHash,
+                });
+
+        } else {
+
+            return res.status(400).json({
+                success: false,
+                message:
+                    "Invalid role",
+            });
+        }
+
+        if (!user) {
+            return res.status(400).json({
+                success: false,
+                message:
+                    "Invalid or expired password reset link",
+            });
+        }
+
+        if (
+            !user.passwordResetExpires ||
+            user.passwordResetExpires <
+                new Date()
+        ) {
+
+            return res.status(400).json({
+                success: false,
+                message:
+                    "Password reset link has expired",
+            });
+        }
+
+        user.password =
+            await bcrypt.hash(
+                password,
+                10
+            );
+
+        if (role === "teacher") {
+            user.passwordSet = true;
+        }
+
+        user.passwordResetTokenHash = null;
+        user.passwordResetExpires = null;
+
+        await user.save();
+
+        return res.status(200).json({
+            success: true,
+            message:
+                "Password reset successfully. You can now log in.",
+        });
+
+    } catch (error) {
+
+        console.error(
+            "RESET PASSWORD ERROR:",
+            error
+        );
+
+        return res.status(500).json({
+            success: false,
+            message:
+                "Server error while resetting password",
+        });
+    }
+};
+
+
+// ==========================================
+// RESEND VERIFICATION / INVITATION
+// ==========================================
+
+const resendVerification = async (req, res) => {
+    try {
+
+        const {
+            email,
+            role,
+        } = req.body;
+
+        if (!email || !role) {
+            return res.status(400).json({
+                success: false,
+                message:
+                    "Email and role are required",
+            });
+        }
+
+        const normalizedEmail =
+            email.trim().toLowerCase();
+
+        let user;
+
+        if (role === "admin") {
+
+            user =
+                await Admin.findOne({
+                    email: normalizedEmail,
+                });
+
+        } else if (role === "teacher") {
+
+            user =
+                await Teacher.findOne({
+                    email: normalizedEmail,
+                });
+
+        } else {
+
+            return res.status(400).json({
+                success: false,
+                message:
+                    "Invalid role",
+            });
+        }
+
+        if (!user) {
+            return res.status(200).json({
+                success: true,
+                message:
+                    "If an account exists with this email, a new email has been sent.",
+            });
+        }
+
+        if (user.isEmailVerified) {
+            return res.status(200).json({
+                success: true,
+                message:
+                    "This email is already verified.",
+            });
+        }
+
+        const newToken =
+            createRawToken();
+
+        user.emailVerificationTokenHash =
+            hashToken(newToken);
+
+        user.emailVerificationExpires =
+            getTokenExpiry();
+
+        await user.save();
+
+        try {
+
+            if (
+                role === "teacher" &&
+                !user.passwordSet
+            ) {
+
+                await sendTeacherInvitationEmail({
+                    name: user.name,
+                    email: user.email,
+                    token: newToken,
+                });
+
+            } else {
+
+                await sendVerificationEmail({
+                    name: user.name,
+                    email: user.email,
+                    token: newToken,
+                });
+            }
+
+        } catch (emailError) {
+
+            console.error(
+                "RESEND EMAIL ERROR:",
+                emailError.message
+            );
+
+            return res.status(500).json({
+                success: false,
+                message:
+                    "Email could not be sent",
+            });
+        }
+
+        return res.status(200).json({
+            success: true,
+            message:
+                "A new verification email has been sent.",
+        });
+
+    } catch (error) {
+
+        console.error(
+            "RESEND VERIFICATION ERROR:",
+            error
+        );
+
+        return res.status(500).json({
+            success: false,
+            message:
+                "Server error while resending verification email",
+        });
+    }
+};
+
+
+module.exports = {
+    createAdmin,
+    createTeacher,
+    adminLogin,
+    teacherLogin,
+    verifyEmail,
+    setTeacherPassword,
+    forgotPassword,
+    resetPassword,
+    resendVerification,
+};
+
+
+

@@ -1,0 +1,663 @@
+﻿const bcrypt = require("bcryptjs");
+const crypto = require("crypto");
+
+const Teacher = require("../models/teacher");
+const Class = require("../models/Class");
+
+const {
+    sendVerificationEmail,
+} = require("../services/emailService");
+
+
+// ============================================================
+// TOKEN HELPERS
+// ============================================================
+
+const createRawToken = () => {
+    return crypto.randomBytes(32).toString("hex");
+};
+
+const hashToken = (token) => {
+    return crypto
+        .createHash("sha256")
+        .update(token)
+        .digest("hex");
+};
+
+const getTokenExpiry = () => {
+    const hours =
+        Number(process.env.EMAIL_TOKEN_EXPIRES_HOURS) || 24;
+
+    return new Date(
+        Date.now() + hours * 60 * 60 * 1000
+    );
+};
+
+
+// ============================================================
+// GET ALL TEACHERS
+// ============================================================
+
+const getAllTeachers = async (req, res) => {
+    try {
+
+        const teachers = await Teacher.find()
+            .select("-password")
+            .populate("assignedClass", "className")
+            .sort({ name: 1 });
+
+        res.status(200).json({
+            success: true,
+            count: teachers.length,
+            teachers,
+        });
+
+    } catch (error) {
+
+        console.error(
+            "Get Teachers Error:",
+            error
+        );
+
+        res.status(500).json({
+            success: false,
+            message: "Server error",
+        });
+    }
+};
+
+
+// ============================================================
+// GET TEACHER BY ID
+// ============================================================
+
+const getTeacherById = async (req, res) => {
+    try {
+
+        const teacher =
+            await Teacher.findById(req.params.id)
+                .select("-password")
+                .populate(
+                    "assignedClass",
+                    "className"
+                );
+
+        if (!teacher) {
+            return res.status(404).json({
+                success: false,
+                message: "Teacher not found",
+            });
+        }
+
+        res.status(200).json({
+            success: true,
+            teacher,
+        });
+
+    } catch (error) {
+
+        console.error(
+            "Get Teacher Error:",
+            error
+        );
+
+        res.status(500).json({
+            success: false,
+            message: "Server error",
+        });
+    }
+};
+
+
+// ============================================================
+// CREATE TEACHER
+// ============================================================
+
+const createTeacher = async (req, res) => {
+
+    try {
+
+        const {
+            name,
+            email,
+            password,
+            assignedClass,
+        } = req.body;
+
+        // Required fields
+        if (
+            !name ||
+            !email ||
+            !password
+        ) {
+            return res.status(400).json({
+                success: false,
+                message:
+                    "Name, email and password are required",
+            });
+        }
+
+        if (password.length < 8) {
+            return res.status(400).json({
+                success: false,
+                message:
+                    "Password must be at least 8 characters",
+            });
+        }
+
+        const normalizedEmail =
+            email.toLowerCase().trim();
+
+        // Duplicate email
+        const existingTeacher =
+            await Teacher.findOne({
+                email: normalizedEmail,
+            });
+
+        if (existingTeacher) {
+            return res.status(400).json({
+                success: false,
+                message:
+                    "Teacher with this email already exists",
+            });
+        }
+
+        // Check assigned class
+        if (assignedClass) {
+
+            const classData =
+                await Class.findById(
+                    assignedClass
+                );
+
+            if (!classData) {
+                return res.status(404).json({
+                    success: false,
+                    message:
+                        "Assigned class not found",
+                });
+            }
+
+            if (classData.classTeacher) {
+                return res.status(400).json({
+                    success: false,
+                    message:
+                        "This class already has a class teacher",
+                });
+            }
+        }
+
+        // Hash admin-created password
+        const hashedPassword =
+            await bcrypt.hash(
+                password,
+                10
+            );
+
+        // Generate email verification token
+        const rawToken =
+            createRawToken();
+
+        const tokenHash =
+            hashToken(rawToken);
+
+        const tokenExpiry =
+            getTokenExpiry();
+
+        // Create teacher
+        const teacher =
+            await Teacher.create({
+                name: name.trim(),
+                email: normalizedEmail,
+                password: hashedPassword,
+
+                assignedClass:
+                    assignedClass || null,
+
+                role: "teacher",
+
+                passwordSet: true,
+
+                isEmailVerified: false,
+
+                emailVerificationTokenHash:
+                    tokenHash,
+
+                emailVerificationExpires:
+                    tokenExpiry,
+
+                passwordResetTokenHash:
+                    null,
+
+                passwordResetExpires:
+                    null,
+            });
+
+        // Assign class teacher
+        if (assignedClass) {
+
+            await Class.findByIdAndUpdate(
+                assignedClass,
+                {
+                    classTeacher:
+                        teacher._id,
+                }
+            );
+        }
+
+        // Send confirmation email
+        try {
+
+            await sendVerificationEmail({
+                name: teacher.name,
+                email: teacher.email,
+                token: rawToken,
+            });
+
+        } catch (emailError) {
+
+            console.error(
+                "Teacher verification email failed:",
+                emailError
+            );
+
+            // Do not leave an account that
+            // cannot receive its verification email.
+            if (assignedClass) {
+
+                await Class.findByIdAndUpdate(
+                    assignedClass,
+                    {
+                        $set: {
+                            classTeacher: null,
+                        },
+                    }
+                );
+            }
+
+            await Teacher.findByIdAndDelete(
+                teacher._id
+            );
+
+            return res.status(500).json({
+                success: false,
+                message:
+                    "Teacher could not be created because the verification email could not be sent",
+            });
+        }
+
+        await teacher.populate(
+            "assignedClass",
+            "className"
+        );
+
+        res.status(201).json({
+            success: true,
+            message:
+                "Teacher created successfully. A verification email has been sent.",
+            teacher: {
+                _id: teacher._id,
+                name: teacher.name,
+                email: teacher.email,
+                assignedClass:
+                    teacher.assignedClass,
+                role: teacher.role,
+                isEmailVerified:
+                    teacher.isEmailVerified,
+            },
+        });
+
+    } catch (error) {
+
+        console.error(
+            "Create Teacher Error:",
+            error
+        );
+
+        res.status(500).json({
+            success: false,
+            message: "Server error",
+        });
+    }
+};
+
+
+// ============================================================
+// UPDATE TEACHER
+// ============================================================
+
+const updateTeacher = async (req, res) => {
+
+    try {
+
+        const {
+            name,
+            email,
+            password,
+            assignedClass,
+        } = req.body;
+
+        const teacher =
+            await Teacher.findById(
+                req.params.id
+            );
+
+        if (!teacher) {
+            return res.status(404).json({
+                success: false,
+                message:
+                    "Teacher not found",
+            });
+        }
+
+        const oldEmail =
+            teacher.email;
+
+        const normalizedEmail =
+            email
+                ? email.toLowerCase().trim()
+                : teacher.email;
+
+        const emailChanged =
+            normalizedEmail !== oldEmail;
+
+        // Check duplicate email
+        if (emailChanged) {
+
+            const duplicateTeacher =
+                await Teacher.findOne({
+                    email: normalizedEmail,
+                    _id: {
+                        $ne:
+                            req.params.id,
+                    },
+                });
+
+            if (duplicateTeacher) {
+                return res.status(400).json({
+                    success: false,
+                    message:
+                        "Another teacher already uses this email",
+                });
+            }
+        }
+
+        // Check class only when changed
+        if (
+            assignedClass !== undefined &&
+            assignedClass !== null &&
+            assignedClass !== ""
+        ) {
+
+            const newClass =
+                await Class.findById(
+                    assignedClass
+                );
+
+            if (!newClass) {
+                return res.status(404).json({
+                    success: false,
+                    message:
+                        "New assigned class not found",
+                });
+            }
+
+            if (
+                newClass.classTeacher &&
+                newClass.classTeacher
+                    .toString() !==
+                    teacher._id.toString()
+            ) {
+                return res.status(400).json({
+                    success: false,
+                    message:
+                        "This class already has a class teacher",
+                });
+            }
+        }
+
+        // Update name
+        if (name) {
+            teacher.name =
+                name.trim();
+        }
+
+        // Update email
+        if (emailChanged) {
+
+            teacher.email =
+                normalizedEmail;
+
+            // New email must be confirmed
+            teacher.isEmailVerified =
+                false;
+        }
+
+        // Update password
+        if (password) {
+
+            if (password.length < 8) {
+                return res.status(400).json({
+                    success: false,
+                    message:
+                        "Password must be at least 8 characters",
+                });
+            }
+
+            teacher.password =
+                await bcrypt.hash(
+                    password,
+                    10
+                );
+
+            // Admin has set the password
+            teacher.passwordSet =
+                true;
+        }
+
+        // Update class
+        if (
+            assignedClass !== undefined
+        ) {
+
+            // Remove old class assignment
+            if (
+                teacher.assignedClass &&
+                (
+                    !assignedClass ||
+                    assignedClass.toString() !==
+                        teacher.assignedClass.toString()
+                )
+            ) {
+
+                await Class.findByIdAndUpdate(
+                    teacher.assignedClass,
+                    {
+                        $set: {
+                            classTeacher:
+                                null,
+                        },
+                    }
+                );
+            }
+
+            // Assign new class
+            if (assignedClass) {
+
+                const newClass =
+                    await Class.findById(
+                        assignedClass
+                    );
+
+                if (!newClass) {
+                    return res.status(404).json({
+                        success: false,
+                        message:
+                            "New assigned class not found",
+                    });
+                }
+
+                newClass.classTeacher =
+                    teacher._id;
+
+                await newClass.save();
+
+                teacher.assignedClass =
+                    assignedClass;
+
+            } else {
+
+                teacher.assignedClass =
+                    null;
+            }
+        }
+
+        // If email changed, generate
+        // a fresh verification token.
+        let rawToken = null;
+
+        if (emailChanged) {
+
+            rawToken =
+                createRawToken();
+
+            teacher.emailVerificationTokenHash =
+                hashToken(rawToken);
+
+            teacher.emailVerificationExpires =
+                getTokenExpiry();
+        }
+
+        await teacher.save();
+
+        // Send email ONLY when email changed
+        if (emailChanged) {
+
+            try {
+
+                await sendVerificationEmail({
+                    name: teacher.name,
+                    email: teacher.email,
+                    token: rawToken,
+                });
+
+            } catch (emailError) {
+
+                console.error(
+                    "Teacher update verification email failed:",
+                    emailError
+                );
+
+                return res.status(500).json({
+                    success: false,
+                    message:
+                        "Teacher was updated, but the verification email could not be sent",
+                });
+            }
+        }
+
+        await teacher.populate(
+            "assignedClass",
+            "className"
+        );
+
+        res.status(200).json({
+            success: true,
+
+            message:
+                emailChanged
+                    ? "Teacher updated successfully. A new verification email has been sent."
+                    : "Teacher updated successfully",
+
+            teacher: {
+                _id: teacher._id,
+                name: teacher.name,
+                email: teacher.email,
+                assignedClass:
+                    teacher.assignedClass,
+                role: teacher.role,
+                isEmailVerified:
+                    teacher.isEmailVerified,
+            },
+        });
+
+    } catch (error) {
+
+        console.error(
+            "Update Teacher Error:",
+            error
+        );
+
+        res.status(500).json({
+            success: false,
+            message: "Server error",
+        });
+    }
+};
+
+
+// ============================================================
+// DELETE TEACHER
+// ============================================================
+
+const deleteTeacher = async (req, res) => {
+
+    try {
+
+        const teacher =
+            await Teacher.findById(
+                req.params.id
+            );
+
+        if (!teacher) {
+            return res.status(404).json({
+                success: false,
+                message:
+                    "Teacher not found",
+            });
+        }
+
+        if (teacher.assignedClass) {
+
+            await Class.findByIdAndUpdate(
+                teacher.assignedClass,
+                {
+                    $set: {
+                        classTeacher: null,
+                    },
+                }
+            );
+        }
+
+        await Teacher.findByIdAndDelete(
+            teacher._id
+        );
+
+        res.status(200).json({
+            success: true,
+            message:
+                "Teacher deleted successfully",
+        });
+
+    } catch (error) {
+
+        console.error(
+            "Delete Teacher Error:",
+            error
+        );
+
+        res.status(500).json({
+            success: false,
+            message: "Server error",
+        });
+    }
+};
+
+
+module.exports = {
+    createTeacher,
+    getAllTeachers,
+    getTeacherById,
+    updateTeacher,
+    deleteTeacher,
+};

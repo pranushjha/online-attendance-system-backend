@@ -479,6 +479,10 @@ module.exports = {
     createTeacher,
     adminLogin,
     teacherLogin,
+    setTeacherPassword,
+    forgotPassword,
+    resetPassword,
+    resendVerification,
 };
 
 

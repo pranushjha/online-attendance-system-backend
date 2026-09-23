@@ -1,10 +1,15 @@
-const express = require("express");
+﻿const express = require("express");
 
 const {
     createAdmin,
     createTeacher,
     adminLogin,
     teacherLogin,
+    verifyEmail,
+    setTeacherPassword,
+    forgotPassword,
+    resetPassword,
+    resendVerification,
 } = require("../controllers/authController");
 
 const authMiddleware = require("../middleware/authMiddleware");
@@ -25,6 +30,41 @@ router.post(
 router.post(
     "/teacher/login",
     teacherLogin
+);
+
+
+// ==========================================
+// EMAIL AUTHENTICATION
+// ==========================================
+
+// Admin email verification
+router.get(
+    "/verify-email",
+    verifyEmail
+);
+
+// Teacher invitation / password setup
+router.post(
+    "/set-teacher-password",
+    setTeacherPassword
+);
+
+// Forgot password
+router.post(
+    "/forgot-password",
+    forgotPassword
+);
+
+// Reset password
+router.post(
+    "/reset-password",
+    resetPassword
+);
+
+// Resend verification/invitation
+router.post(
+    "/resend-verification",
+    resendVerification
 );
 
 
